@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
+import click
 import kitipy
 import kitipy.docker
 import kitipy.docker.tasks
-import subprocess
+import os
+import sys
+from typing import Optional, List
 
 config = {
     'stacks': {
