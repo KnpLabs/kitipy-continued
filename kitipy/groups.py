@@ -11,19 +11,19 @@ from .utils import load_config_file, normalize_config, set_up_file_transfer_list
 
 def _fake_click_ctx() -> click.Context:
     """This internal function is used to create a fake click Context. It's 
-    used by Group.merge() to list commands from source Groups.
+    used by Group.merge() to list Tasks from source Groups.
     """
     return click.Context.__new__(click.Context)
 
 
-class FilteredCommand(click.Command):
-    """FilteredCommand is like regular click.Command but it can be dynamically
+class Task(click.Command):
+    """Task is like regular click.Command but it can be dynamically
     disabled through a filter function. Such functions can be used to
     conditionally enable a task for a specific stage or to limit it to remote
     stages for instance.
 
-    Note that only kitipy Group can filter out FilteredCommand; using
-    FilteredCommand with regular click Group will have no effect.
+    Note that only kitipy Group can filter out Task; using
+    Task with regular click Group will have no effect.
 
     kitipy provides some filters in kitipy.filters and kitipy.docker.filters
     but you can also write your own filters if you have more advanced use-cases.
@@ -35,9 +35,9 @@ class FilteredCommand(click.Command):
         """
         Args:
             name (str):
-                Name of the command.
+                Name of the task.
             filter (Optional[Callable[[click.Context], bool]]):
-                Filter function used to filter out the command based on click
+                Filter function used to filter out the task based on click
                 Context. When it's not provided, it defaults to a lambda always
                 returning True.
                 Click Context is passed as argument as it's the most generic
@@ -52,7 +52,7 @@ class FilteredCommand(click.Command):
         self.filter = filter or (lambda _: True)
 
     def is_enabled(self, click_ctx: click.Context) -> bool:
-        """Check if the that command should be filtered out based on click Context.
+        """Check if the that Task should be filtered out based on click Context.
         Most generally, you shouldn't have to worry about this method, it's 
         automatically called by kitipy Group.
 
@@ -61,7 +61,7 @@ class FilteredCommand(click.Command):
                 The click Context passed to the underlying filter.
         
         Returns:
-            bool: Either this command should be filtered in (True) or
+            bool: Either this task should be filtered in (True) or
             filtered out (False).
         """
         return self.filter(click_ctx)
@@ -71,15 +71,15 @@ class FilteredCommand(click.Command):
         in the right way.
 
         Raises:
-            click.ClickException: When this command is filtered out.
+            click.ClickException: When this task is filtered out.
         """
         if not self.is_enabled(click_ctx):
-            click_ctx.fail('Command "%s" is filtered out.' % self.name)
+            click_ctx.fail('Task "%s" is filtered out.' % self.name)
 
         return super().invoke(click_ctx)
 
     def get_help_option(self, click_ctx: click.Context):
-        """This is a click.Command method overriden to implement command
+        """This is a click.Command method overriden to implement task
         filtering.
         """
         help_options = self.get_help_option_names(click_ctx)
@@ -87,11 +87,11 @@ class FilteredCommand(click.Command):
             return
 
         def show_help(click_ctx, param, value):
-            """Returns the help option object when the command is not
+            """Returns the help option object when the task is not
             filtered out, or raise an Error.
             """
             if not self.is_enabled(click_ctx):
-                click_ctx.fail('Command "%s" not found.' % self.name)
+                click_ctx.fail('Task "%s" not found.' % self.name)
 
             if value and not click_ctx.resilient_parsing:
                 click.echo(click_ctx.get_help(), color=click_ctx.color)
@@ -106,9 +106,9 @@ class FilteredCommand(click.Command):
             help='Show this message and exit.')
 
 
-class Group(click.Group, FilteredCommand):
+class Group(click.Group, Task):
     """Group is like regular click.Group but it implements some ktipy-specific
-    features like: support for stage/stack-scoped command groups and command
+    features like: support for stage/stack-scoped task groups and task
     filtering.
     """
     def __init__(self,
@@ -120,11 +120,11 @@ class Group(click.Group, FilteredCommand):
         """
         Args:
             name (str):
-                Name of the command Group.
+                Name of the task Group.
             commands:
                 List of commands to attach to this group.
             filter (Callable):
-                A function to filter in/out this command group.
+                A function to filter in/out this task group.
             invoke_on_help (bool):
                 Whehter this group function should be calle before generatng
                 help message.
@@ -155,7 +155,7 @@ class Group(click.Group, FilteredCommand):
 
     def get_command(self, click_ctx: click.Context, cmd_name: str):
         """This is a click.Group method overriden to implement
-        stage/stack-scoped command groups.
+        stage/stack-scoped task groups.
 
         Commands aren't filtered out by this method because format_command()
         method calls it to display the help message.
@@ -163,7 +163,7 @@ class Group(click.Group, FilteredCommand):
         You generally don't need to call it by yourself.
 
         Raises:
-            KeyError: When the command is not found.
+            KeyError: When the task is not found.
         """
         kctx = click_ctx.find_object(Context)
 
@@ -180,7 +180,7 @@ class Group(click.Group, FilteredCommand):
 
     def list_commands(self, click_ctx: click.Context):
         """This is a click.Group method overriden to implement
-        stage/stack-scoped command groups and command filtering behaviors.
+        stage/stack-scoped task groups and task filtering behaviors.
 
         You generally don't need to call it by yourself.
         """
@@ -191,20 +191,20 @@ class Group(click.Group, FilteredCommand):
         stage_names = kctx.get_stage_names()
         if len(stage_names) > 0 and self._stage_group is not None:
             stage_vals = (self._stage_group for i in range(len(stage_names)))
-            stage_commands = dict(zip(stage_names, stage_vals))
+            stage_tasks = dict(zip(stage_names, stage_vals))
 
-            commands = dict(commands, **stage_commands)
+            commands = dict(commands, **stage_tasks)
 
         stack_names = kctx.get_stack_names()
         if len(stack_names) > 0 and self._stack_group is not None:
             stack_vals = (self._stack_group for i in range(len(stack_names)))
-            stack_commands = dict(zip(stack_names, stack_vals))
+            stack_tasks = dict(zip(stack_names, stack_vals))
 
-            commands = dict(commands, **stack_commands)
+            commands = dict(commands, **stack_tasks)
 
         filtered = {}
         for cmd_name, cmd in commands.items():
-            if isinstance(cmd, FilteredCommand) or isinstance(cmd, Group):
+            if isinstance(cmd, Task) or isinstance(cmd, Group):
                 if cmd.is_enabled(click_ctx):
                     filtered[cmd_name] = cmd
             else:
@@ -219,22 +219,29 @@ class Group(click.Group, FilteredCommand):
         return super().get_help(click_ctx)
 
     def command(self, *args, **kwargs):
-        """This decorator creates a new kitipy Command and adds it to the
-        current Group. See kitipy.Command() for more details about the
-        differences between kitipy.Command and click.Command.
+        raise DeprecationWarning(
+            "kitipy task groups don\'t support command() helper.\n\n" +
+            "You either have to call kitipy.task() or if you really prefer " +
+            "using a click Command, you can use click.command() decorator " +
+            "and add the command to this group using group.add_command().")
 
-        See kitipy.command() signature for more details about accepted
+    def task(self, *args, **kwargs):
+        """This decorator creates a new kitipy task and adds it to the current
+        Group. See kitipy.Task() for more details about the
+        differences between kitipy.Task and click.Command.
+
+        See kitipy.task() signature for more details about accepted
         parameters.
 
-        Also note that the command function that receives this decorator will 
+        Also note that the task function that receives this decorator will 
         get the current kitipy.Context as 
         
         Returns
             Callable: The decorator to apply to the group function.
         """
         def decorator(f):
-            kwargs.setdefault('cls', FilteredCommand)
-            cmd = command(*args, **kwargs)(_prepend_kctx_wrapper(f))
+            kwargs.setdefault('cls', Task)
+            cmd = task(*args, **kwargs)(_prepend_kctx_wrapper(f))
             self.add_command(cmd)
             return cmd
 
@@ -263,7 +270,7 @@ class Group(click.Group, FilteredCommand):
         """This decorator creates a new kitipy.Group and registers it as a
         stage-scoped group on the current Group.
         
-        As stage-scoped command groups are regular command groups, this
+        As stage-scoped task groups are regular task groups, this
         decorator is the only way to create a stage-scoped group.
 
         Args:
@@ -281,7 +288,7 @@ class Group(click.Group, FilteredCommand):
         """This decorator creates a new kitipy.Group and registers it as a
         stack-scoped group on the current Group.
         
-        As stack-scoped command groups are regular command groups, this
+        As stack-scoped task groups are regular task groups, this
         decorator is the only way to create a stack-scope group.
 
         Args:
@@ -296,31 +303,39 @@ class Group(click.Group, FilteredCommand):
         return decorator
 
 
-def command(name: Optional[str] = None, **attrs):
-    """This decorator creates a new kitipy Command. It automatically sets the
-    requested filter depending on local_only/remote_only kwargs.
+def task(name: Optional[str] = None,
+         local_only: bool = False,
+         remote_only: bool = False,
+         **attrs):
+    """This decorator creates a new kitipy Task. It automatically sets
+    the requested filter depending on local_only/remote_only kwargs.
 
     Args:
         name (Optional[str]):
-            The name of the command. The function name is used by default.
+            The name of the task. The function name is used by default.
+        local_only (bool):
+            This task should be enabled only when the current kitipy Executor
+            is running in local mode.
+        remote_only (bool):
+            This task should be enabled only when the current kitipy Executor
+            is running in remote mode.
         **attrs:
             Any other parameters supported by click.Command is also supported.
             In addition, it also supports local_only and remote_only
-            parameters. Both are booleans and automatially set the appropriate
-            filter on the command.
+            parameters. Both are booleans and automatically set the appropriate
+            filter on the task.
     
     Returns
-        Callable: The decorator to apply to the command function.
+        Callable: The decorator to apply to the task function.
     """
-    if 'local_only' in attrs:
+    if local_only:
         attrs['filter'] = filters.local_only
-        del attrs['local_only']
 
-    if 'remote_only' in attrs:
+    if remote_only:
         attrs['filter'] = filters.remote_only
         del attrs['remote_only']
 
-    attrs.setdefault('cls', FilteredCommand)
+    attrs.setdefault('cls', Task)
     return click.command(name, **attrs)
 
 
@@ -343,12 +358,12 @@ def group(name: Optional[str] = None, **attrs):
 
 def _prepend_kctx_wrapper(f):
     """This internal function creates a wrapper function automatically applied
-    to command body to inject the kitipy.Context as first argument.
+    to task function to inject the kitipy.Context as first argument.
     """
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
         # Don't add kctx if it's already in *args. This might happen when a
-        # command is invoked from another one.
+        # task is invoked from another one.
         if len(args) == 0 or not isinstance(args[0], Context):
             kctx = get_current_context()
             args = (kctx, ) + args
@@ -444,8 +459,8 @@ def _init_stack_group_wrapper(f):
 
 
 class RootCommand(Group):
-    """The RootCommand is used to mark the root of kitipy command tree. It's
-    mostly a kitipy command group but without filter support. It's a central
+    """The RootCommand is used to mark the root of kitipy task tree. It's
+    mostly a kitipy task group but without filter support. It's a central
     piece of kitipy as it's responsible for creating the kitipy Context and the
     Executor used to run local and remote commands seamlessly.
 
@@ -469,8 +484,9 @@ class RootCommand(Group):
                 This is the base directory where kitipy commands will be executed.
                 You generally want to use the current working directory
                 (eg. os.getcwd()), but in some cases you might want to run all
-                of your commands in a specific subdirectory of your project (for
-                instance if your project is composed of multiple components/services).
+                or a subset of your tasks in a specific subdirectory of your
+                project (for instance if your project is composed of multiple
+                components/services).
             **kwargs:
                 Accept any valid argument for click.Group().
 
@@ -478,7 +494,7 @@ class RootCommand(Group):
             RuntimeError:
                 If there're multiple stages defined and there're no default stage.
         """
-        # Root command can't be filtered out, that'd make no sense.
+        # RootCommand can't be filtered out, that'd make no sense.
         kwargs['filter'] = (lambda _: True)
         super().__init__(**kwargs)
 
@@ -514,7 +530,7 @@ class RootCommand(Group):
         See make_context() method from click.Group. This method does pretty
         much the same job but attaches kitipy.Context to click.Context 
         before parsing remaning CLI args. This is needed as subcommands might
-        be stage/stack-dedicated command groups, in which case stages/stacks
+        be stage/stack-dedicated task groups, in which case stages/stacks
         names have to be accessed through kitipy.Context during parsing.
 
         You don't need to call this method by yourself.
@@ -546,7 +562,7 @@ def root(config: Optional[Dict] = None,
     config_file parameter takes precedence over config. If no config is
     provided, it defaults to an empty config dict.
 
-    This is generally what you want to call to declare the root of your command
+    This is generally what you want to call to declare the root of your task
     tree and use all of the kitipy features.
 
     Args:
@@ -561,7 +577,7 @@ def root(config: Optional[Dict] = None,
             Any other argument supported by click.group() decorator.
 
     Returns:
-        Callable: It returns the decorator to apply to the command.
+        Callable: The decorator to apply to the task function.
     """
     if config_file is not None:
         config = load_config_file(config_file)

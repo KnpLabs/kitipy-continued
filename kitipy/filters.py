@@ -1,7 +1,7 @@
-"""Common kitipy commands and command groups filters.
+"""Common kitipy tasks and task groups filters.
 
-These filters have to be used with kitipy.Command and kitipy.Group class, or 
-through kitipy.command() and kitipy.group() decorators.
+These filters have to be used with kitipy.Task and kitipy.Group class, or 
+through kitipy.task() and kitipy.group() decorators.
 """
 
 import click

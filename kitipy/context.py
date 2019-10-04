@@ -8,7 +8,7 @@ from .executor import Executor
 class Context(object):
     """Kitipy context is the global object carrying the kitipy Executor used to
     ubiquitously run commands on local and remote targets, as well as the stack
-    and stage objects loaded by command groups and the dispatcher used to update
+    and stage objects loaded by task groups and the dispatcher used to update
     the CLI based on executor events.
 
     It's acting as a global Facade, such that you generally don't need to
@@ -54,16 +54,16 @@ class Context(object):
                 There might be no stage available when the Context is built. In
                 such case, it can be set afterwards. The stage can be loaded
                 through kitipy.load_stage(), but this is handled
-                automatically by creating a stack-scoped command group through
-                kitipy.command() or kctx.command() decorators.
+                automatically by creating a stack-scoped task group through
+                kitipy.task() or kctx.task() decorators.
             stack (Optional[kitipy.docker.BaseStack]):
                 This is the stack object representing the Compose/Swarm stack
                 in use.
                 There might be no stack available when the Context is built. In
                 such case, it can be set afterwards. The stack can be loaded
                 through kitipy.docker.load_stack(), but this is handled
-                automatically by creating a stack-scoped command group through
-                kitipy.command() or kctx.command() decorators.
+                automatically by creating a stack-scoped task group through
+                kitipy.task() or kctx.task() decorators.
         """
         self.config = config
         self.stage = stage

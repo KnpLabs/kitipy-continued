@@ -25,7 +25,7 @@ def root():
     pass
 
 
-@root.command()
+@root.task()
 @click.option('--diff/--no-diff', 'show_diff', default=True)
 @click.option('--force', is_flag=True, default=None)
 def format(kctx: kitipy.Context, show_diff, force):
@@ -52,7 +52,7 @@ def format(kctx: kitipy.Context, show_diff, force):
         local_with_venv(kctx, 'yapf -vvv -p -i -r kitipy/ tests/ tasks*.py')
 
 
-@root.command()
+@root.task()
 def lint(kctx: kitipy.Context):
     """Run mypy, a static type checker, to detect type errors."""
     local_with_venv(kctx, 'mypy -p kitipy')
@@ -65,14 +65,14 @@ def test():
     pass
 
 
-@test.command(name='all')
+@test.task(name='all')
 def test_all(kctx: kitipy.Context):
     """Execute all the tests suites."""
     kctx.invoke(test_unit)
     kctx.invoke(test_tasks)
 
 
-@test.command(name='unit')
+@test.task(name='unit')
 def test_unit(kctx: kitipy.Context):
     # Be sure the SSH container used for tests purpose is up and running.
     # @TODO: add a common way to kitipy to wait for a port to be open
@@ -104,7 +104,7 @@ def test_unit(kctx: kitipy.Context):
     local_with_venv(kctx, 'pytest tests/unit/ -vv')
 
 
-@test.command(name='tasks')
+@test.task(name='tasks')
 @click.argument('suites', nargs=-1, type=str)
 def test_tasks(kctx: kitipy.Context, suites: List[str]):
     if len(suites) == 0:
@@ -115,7 +115,7 @@ def test_tasks(kctx: kitipy.Context, suites: List[str]):
         local_with_venv(kctx, 'pytest tests/tasks/test_%s.py -vv' % (suite))
 
 
-@test.command(name='generate-git-tgz')
+@test.task(name='generate-git-tgz')
 @click.option('--keep-tmp-dir', 'keep', type=bool, default=False, is_flag=True)
 def test_generate_git_tgz(kctx: kitipy.Context, keep: bool):
     """(Re) Generate tests/git-archive.tgz.

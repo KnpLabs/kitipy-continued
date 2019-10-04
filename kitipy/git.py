@@ -26,7 +26,7 @@ def ensure_tag_exists(kctx: kitipy.Context, tag: str):
         check=False)
     if res.returncode != 0:
         kctx.fail(
-            "The given tag is not available in your local Git repo. Please fetch remote tags before running this command again."
+            "The given tag is not available in your local Git repo. Please fetch remote tags before running this task again."
         )
 
 
