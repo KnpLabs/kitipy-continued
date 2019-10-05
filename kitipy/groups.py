@@ -1,6 +1,7 @@
 import click
 import functools
 import os
+import subprocess
 from typing import Callable, Dict, Optional
 from . import filters
 from .context import Context, pass_context, get_current_context
@@ -202,7 +203,7 @@ class Group(click.Group, Task):
 
             commands = dict(commands, **stack_tasks)
 
-        filtered = {}
+        filtered = {}  # type: Dict[str, click.Command]
         for cmd_name, cmd in commands.items():
             if isinstance(cmd, Task) or isinstance(cmd, Group):
                 if cmd.is_enabled(click_ctx):
@@ -517,6 +518,7 @@ class RootCommand(Group):
         executor = _create_executor(config, stage['name'], dispatcher)
         self.kctx = Context(config, executor, dispatcher)
         self.kctx.stage = stage
+        self.click_ctx = None
 
         stacks = config['stacks'].values()
         if len(stacks) == 1:
@@ -541,16 +543,39 @@ class RootCommand(Group):
 
         # Attach kitipy Context to the click Context right after it's created
         # to have it available when parsing remaining CLI args.
-        click_ctx = click.Context(self,
-                                  info_name=info_name,
-                                  parent=parent,
-                                  **extra)
-        click_ctx.obj = self.kctx
+        self.click_ctx = click.Context(self,
+                                       info_name=info_name,
+                                       parent=parent,
+                                       **extra)
+        self.click_ctx.obj = self.kctx
 
-        with click_ctx.scope(cleanup=False):
-            self.parse_args(click_ctx, args)
+        with self.click_ctx.scope(cleanup=False):
+            self.parse_args(self.click_ctx, args)
 
-        return click_ctx
+        return self.click_ctx
+
+    def invoke(self, click_ctx: click.Context):
+        try:
+            super().invoke(click_ctx)
+        except subprocess.CalledProcessError as e:
+            raise TaskError(str(e), self.click_ctx, e.returncode)
+
+
+class TaskError(click.ClickException):
+    def __init__(self,
+                 message: str,
+                 click_ctx: Optional[click.Context] = None,
+                 exit_code: int = 1):
+        super().__init__(message)
+        self.exit_code = exit_code
+        self.click_ctx = click_ctx
+
+    def show(self, file=None):
+        color = self.click_ctx.color if self.click_ctx else None
+        msg = click.style('Error: %s' % self.format_message(),
+                          fg='bright_white',
+                          bg='red')
+        click.echo(msg, file=file, color=color)
 
 
 def root(config: Optional[Dict] = None,
