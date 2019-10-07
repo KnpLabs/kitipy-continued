@@ -6,5 +6,9 @@ setuptools.setup(
     description="KNP task runner to automate and ease dev and ops workflows",
     license="MIT",
     packages=setuptools.find_packages(),
-    install_requires=[],
+    install_requires=[
+        "click>=7.0",
+        "paramiko>=2.6.0",
+        "PyYAML>=5.1",
+    ],
 )

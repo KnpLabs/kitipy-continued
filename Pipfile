@@ -1,0 +1,15 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+pytest = ">=5.1"
+mypy = ">=0.720"
+yapf = ">=0.28"
+
+[packages]
+"kitipy" = {path = ".", editable = true}
+
+[requires]
+python_version = "3.7"
