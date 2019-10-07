@@ -1,0 +1,20 @@
+version: '2'
+
+services:
+  testhost:
+    image: ajoergensen/openssh-server
+    environment:
+      - APP_PASSWORD=lorem
+    volumes:
+      - './.ssh/authorized_keys:/config/.ssh/authorized_keys'
+    ports:
+    - '127.0.0.1:2022:22'
+
+  jumphost:
+    image: ajoergensen/openssh-server
+    environment:
+      - APP_PASSWORD=lorem
+    volumes:
+      - './.ssh/authorized_keys:/config/.ssh/authorized_keys'
+    ports:
+    - '127.0.0.1:2023:22'
