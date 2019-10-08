@@ -4,7 +4,7 @@ import os
 import subprocess
 from typing import Callable, Dict, Optional
 from . import filters
-from .context import Context, pass_context, get_current_context
+from .context import Context, pass_context, get_current_context, get_current_executor
 from .dispatcher import Dispatcher
 from .executor import Executor
 from .utils import load_config_file, normalize_config, set_up_file_transfer_listeners
@@ -20,11 +20,11 @@ def _fake_click_ctx() -> click.Context:
 class Task(click.Command):
     """Task is like regular click.Command but it can be dynamically
     disabled through a filter function. Such functions can be used to
-    conditionally enable a task for a specific stage or to limit it to remote
-    stages for instance.
+    conditionally enable a task for a specific stage/stack or to limit it to
+    remote stages for instance.
 
-    Note that only kitipy Group can filter out Task; using
-    Task with regular click Group will have no effect.
+    Note that only kitipy Group can filter out Task; using Task with regular
+    click Group will have no effect.
 
     kitipy provides some filters in kitipy.filters and kitipy.docker.filters
     but you can also write your own filters if you have more advanced use-cases.
@@ -32,6 +32,7 @@ class Task(click.Command):
     def __init__(self,
                  name: str,
                  filter: Optional[Callable[[click.Context], bool]] = None,
+                 cwd: Optional[str] = None,
                  **kwargs):
         """
         Args:
@@ -45,12 +46,20 @@ class Task(click.Command):
                 object available (eg. everything is accessible from there).
                 Check native filters to know how to retrieve kitipy Context
                 from click Context.
+            cwd (str):
+                Base directory where the commands used by this task shoud be
+                executed.
+
+                It's recommended to use this parameter instead of calling
+                kctx.cd() directly as the Task cwd can be easily changed, thus
+                increasing the Task reusability.
             **kwargs:
                 Accept any other parameters also supported by click.Command()
                 constructor.
         """
         super().__init__(name, **kwargs)
         self.filter = filter or (lambda _: True)
+        self.cwd = cwd
 
     def is_enabled(self, click_ctx: click.Context) -> bool:
         """Check if the that Task should be filtered out based on click Context.
@@ -76,6 +85,10 @@ class Task(click.Command):
         """
         if not self.is_enabled(click_ctx):
             click_ctx.fail('Task "%s" is filtered out.' % self.name)
+
+        if self.cwd is not None:
+            exec = get_current_executor()
+            exec.cd(self.cwd)
 
         return super().invoke(click_ctx)
 
@@ -116,6 +129,7 @@ class Group(click.Group, Task):
                  name=None,
                  commands=None,
                  filter=None,
+                 cwd: Optional[str] = None,
                  invoke_on_help: bool = False,
                  **attrs):
         """
@@ -126,6 +140,13 @@ class Group(click.Group, Task):
                 List of commands to attach to this group.
             filter (Callable):
                 A function to filter in/out this task group.
+            cwd (str):
+                Base directory where the commands used by this task shoud be
+                executed.
+
+                It's recommended to use this parameter instead of calling
+                kctx.cd() directly as the Task cwd can be easily changed, thus
+                increasing the Task reusability.
             invoke_on_help (bool):
                 Whehter this group function should be calle before generatng
                 help message.
@@ -136,6 +157,7 @@ class Group(click.Group, Task):
         self._stage_group = None
         self._stack_group = None
         self.filter = filter or (lambda _: True)
+        self.cwd = cwd
         self.invoke_on_help = invoke_on_help
 
     def merge(self, *args: click.Group):
@@ -225,6 +247,22 @@ class Group(click.Group, Task):
             "You either have to call kitipy.task() or if you really prefer " +
             "using a click Command, you can use click.command() decorator " +
             "and add the command to this group using group.add_command().")
+
+    def invoke(self, click_ctx: click.Context):
+        """Given a context, this invokes the attached callback (if it exists)
+        in the right way.
+
+        Raises:
+            click.ClickException: When this group is filtered out.
+        """
+        if not self.is_enabled(click_ctx):
+            click_ctx.fail('Task "%s" is filtered out.' % self.name)
+
+        if self.cwd is not None:
+            exec = get_current_executor()
+            exec.cd(self.cwd)
+
+        return super().invoke(click_ctx)
 
     def task(self, *args, **kwargs):
         """This decorator creates a new kitipy task and adds it to the current
@@ -320,6 +358,15 @@ def task(name: Optional[str] = None,
         remote_only (bool):
             This task should be enabled only when the current kitipy Executor
             is running in remote mode.
+        filter (Callable):
+            A function to filter in/out this task.
+        cwd (str):
+            Base directory where the commands used by this task should be
+            executed.
+
+            It's recommended to use this parameter instead of calling
+            kctx.cd() directly as the Task cwd can be easily changed, thus
+            increasing the Task reusability.
         **attrs:
             Any other parameters supported by click.Command is also supported.
             In addition, it also supports local_only and remote_only
@@ -346,7 +393,23 @@ def group(name: Optional[str] = None, **attrs):
 
     Args:
         name (Optional[str]):
-            The name of the group. The function name is used by default.
+            The name of the group. The name of the decorated function is used
+            by default.
+        local_only (bool):
+            This group should be enabled only when the current kitipy Executor
+            is running in local mode.
+        remote_only (bool):
+            This group should be enabled only when the current kitipy Executor
+            is running in remote mode.
+        filter (Callable):
+            A function to filter in/out this task group.
+        cwd (str):
+            Base directory where the commands used by this task group should be
+            executed.
+
+            It's recommended to use this parameter instead of calling
+            kctx.cd() directly as the Group cwd can be easily changed, thus
+            increasing the Group reusability.
         **attrs:
             Any other parameter accepted by click.command().
     
@@ -354,7 +417,7 @@ def group(name: Optional[str] = None, **attrs):
         Callable: The decorator to apply to the group function.
     """
     attrs.setdefault('cls', Group)
-    return click.command(name, **attrs)
+    return task(name, **attrs)
 
 
 def _prepend_kctx_wrapper(f):
