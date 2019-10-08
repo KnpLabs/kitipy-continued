@@ -437,9 +437,9 @@ class SwarmStack(BaseStack):
         return self._executor.run(cmd, **kwargs)
 
 
-def load_stack(ctx: Context, stack_name: str):
-    executor = ctx.executor
-    config = ctx.config
+def load_stack(kctx: Context, stack_name: str) -> BaseStack:
+    executor = kctx.executor
+    config = kctx.config
 
     if 'stacks' not in config:
         raise click.BadParameter('No top key "stacks" found in the config.')
@@ -450,9 +450,9 @@ def load_stack(ctx: Context, stack_name: str):
         raise click.BadParameter('Stack %s not defined in the config.' %
                                  (stack_name))
 
-    stack_path = stack_config.get('path', None)
-    if stack_path is None:
-        stack_path = os.getcwd()
+    stack_basedir = stack_config.get('basedir', None)
+    if stack_basedir is None:
+        stack_basedir = os.getcwd()
 
     # @TODO: add templated stack filename
     # stack_file = stack_config.get('file', '%s.yml' % (stage))
@@ -465,10 +465,10 @@ def load_stack(ctx: Context, stack_name: str):
     if 'swarm' in stack_config and stack_config['swarm']:
         return SwarmStack(executor,
                           stack_name=stack_name,
-                          basedir=stack_path,
+                          basedir=stack_basedir,
                           file=stack_file)
 
     return ComposeStack(executor,
                         stack_name=stack_name,
-                        basedir=stack_path,
+                        basedir=stack_basedir,
                         file=stack_file)
