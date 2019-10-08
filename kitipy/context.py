@@ -117,6 +117,9 @@ class Context(object):
         """
         return self.executor.local(cmd, **kwargs)
 
+    def cd(self, path: str):
+        self.executor.cd(path)
+
     def copy(self, src: str, dest: str):
         """Copy a local file to a given path. If the underlying executor has
         been configured to work in remote mode, the given source path will

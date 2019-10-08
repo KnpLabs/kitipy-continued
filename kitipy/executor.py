@@ -480,6 +480,11 @@ class Executor(object):
         res = self._remote("mktemp -d %s" % (filename_tpl))
         return res.stdout
 
+    def cd(self, path: str):
+        if not os.path.isabs(path):
+            path = os.path.join(self._basedir, path)
+        self._basedir = path
+
     def path_exists(self, path: str) -> bool:
         """Check if the given path exists. In local mode, it uses
         `os.path.exists` and `ls` in remote mode.
