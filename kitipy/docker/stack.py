@@ -197,7 +197,7 @@ class ComposeStack(BaseStack):
              _check: bool = True,
              **kwargs) -> subprocess.CompletedProcess:
         exec = append_cmd_flags('docker-compose exec', **kwargs)
-        return self._run('%s %s %s' % (exec, service, ' '.join(cmd)),
+        return self._run('%s %s %s' % (exec, service, cmd),
                          pipe=_pipe,
                          check=_check)
 
@@ -390,7 +390,7 @@ class SwarmStack(BaseStack):
              **kwargs) -> subprocess.CompletedProcess:
         # @TODO: this is not going to work (docker-compose in SwarmStack)
         basecmd = append_cmd_flags('docker-compose exec', **kwargs)
-        return self._run('%s %s %s' % (basecmd, service, ' '.join(cmd)),
+        return self._run('%s %s %s' % (basecmd, service, cmd),
                          pipe=_pipe,
                          check=_check)
 
