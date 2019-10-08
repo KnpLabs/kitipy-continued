@@ -56,3 +56,13 @@ def stage_named(expected: str) -> Callable:
         return kctx.stage is not None and kctx.stage['name'] == expected
 
     return only
+
+
+def stack_named(expected: str) -> Callable:
+    def only(click_ctx: click.Context) -> bool:
+        kctx = click_ctx.find_object(Context)
+        if kctx is None:
+            return False
+        return kctx.stack is not None and kctx.stack.name == expected
+
+    return only
