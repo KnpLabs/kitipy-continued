@@ -2,7 +2,7 @@ import click
 import subprocess
 from typing import Any, Dict, List, Optional
 from .dispatcher import Dispatcher
-from .executor import Executor
+from .executor import Executor, _create_executor
 
 
 class Context(object):
@@ -71,6 +71,19 @@ class Context(object):
         self.executor = executor
         self.dispatcher = dispatcher
 
+    def with_stage(self, stage_name: str):
+        """Change the current Context stage.
+
+        Args:
+            stage_name (str): Name of the stage to use.
+
+        Raises:
+            KeyError: If the stage couldn't be found in the Context config.
+        """
+        self.stage = self.config['stages'][stage_name]
+        self.executor = _create_executor(self.config, stage_name,
+                                         self.dispatcher)
+
     def run(self, cmd: str, **kwargs) -> subprocess.CompletedProcess:
         """This method is the way to ubiquitously run a command on either local
         or remote target, depending on how the executor was set.
@@ -117,6 +130,9 @@ class Context(object):
         """
         return self.executor.local(cmd, **kwargs)
 
+    def cd(self, path: str):
+        self.executor.cd(path)
+
     def copy(self, src: str, dest: str):
         """Copy a local file to a given path. If the underlying executor has
         been configured to work in remote mode, the given source path will
@@ -153,6 +169,30 @@ class Context(object):
     def echo(self, *args, **kwargs):
         """Call echo() method on current click.Context"""
         return click.echo(*args, **kwargs)
+
+    def info(self, message: str):
+        """Output a colored info message (black on cyan) on stderr using :func:`click.secho`."""
+        return click.secho('INFO: ' + message,
+                           bg='cyan',
+                           fg='black',
+                           bold=True,
+                           err=True)
+
+    def warning(self, message: str):
+        """Output a colored warning message (black on yellow) on stderr, using :func:`click.secho`."""
+        return click.secho('WARNING: ' + message,
+                           bg='yellow',
+                           fg='black',
+                           bold=True,
+                           err=True)
+
+    def error(self, message: str):
+        """Output a colored error message (white on red) on stderr using :func:`click.secho`."""
+        return click.secho('ERROR: ' + message,
+                           bg='red',
+                           fg='bright_white',
+                           bold=True,
+                           err=True)
 
     def fail(self, message):
         """Call fail() method on current click.Context"""

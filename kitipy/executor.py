@@ -480,6 +480,11 @@ class Executor(object):
         res = self._remote("mktemp -d %s" % (filename_tpl))
         return res.stdout
 
+    def cd(self, path: str):
+        if not os.path.isabs(path):
+            path = os.path.join(self._basedir, path)
+        self._basedir = path
+
     def path_exists(self, path: str) -> bool:
         """Check if the given path exists. In local mode, it uses
         `os.path.exists` and `ls` in remote mode.
@@ -497,6 +502,49 @@ class Executor(object):
     @property
     def is_remote(self) -> bool:
         return self._ssh_config is not None
+
+
+def _create_executor(config: Dict, stage_name: str,
+                     dispatcher: Dispatcher) -> Executor:
+    """Instantiate a new executor for the given stage.
+
+    Args:
+        config (Dict):
+            The whole kitipy config.
+        stage_name (str):
+            The name of the stage to instantiate an Executor for.
+        dispatcher (Dispatcher):
+            The dispatcher later used by the instantiated Executor.
+    """
+
+    stage = config['stages'][stage_name]
+
+    if stage.get('type', None) not in ('remote', 'local'):
+        raise click.BadParameter(
+            'Stage "%s" has no "type" field or its value is invalid (should be either: local or remote).'
+            % (stage_name))
+
+    if stage['type'] == 'local':
+        # @TODO: local executor base path should be configurable through stage params
+        return Executor(os.getcwd(), dispatcher)
+
+    if 'hostname' not in stage:
+        raise click.BadParameter(
+            'Remote stage "%s" has no hostname field defined.' % (stage))
+
+    # @TODO: verify and explain better all the mess around basedir/cwd
+    basedir = stage.get('basedir', '~/')
+    params = {
+        'hostname': stage['hostname'],
+    }
+
+    if 'ssh_config' in config:
+        params['ssh_config_file'] = config['ssh_config']
+    if 'paramiko_config' in config:
+        # @TODO: we shouldn't be that much permissive with paramiko config
+        params['paramiko_config'] = config['paramiko_config']
+
+    return Executor(basedir, dispatcher, **params)
 
 
 class InteractiveWarningPolicy(paramiko.MissingHostKeyPolicy):
