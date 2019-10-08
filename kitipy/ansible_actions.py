@@ -59,4 +59,4 @@ def run_playbook(kctx: Context,
 
     cmd += ' ' + playbook
 
-    kctx.run(cmd)
+    kctx.local(cmd)
