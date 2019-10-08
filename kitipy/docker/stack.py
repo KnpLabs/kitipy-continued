@@ -50,8 +50,8 @@ class BaseStack(ABC):
     @abstractmethod
     def ps(self,
            services: List[str] = [],
-           _pipe: bool = True,
-           _check: bool = False,
+           _pipe: bool = False,
+           _check: bool = True,
            **kwargs) -> subprocess.CompletedProcess:
         pass
 
@@ -164,8 +164,8 @@ class ComposeStack(BaseStack):
 
     def ps(self,
            services: List[str] = [],
-           _pipe: bool = True,
-           _check: bool = False,
+           _pipe: bool = False,
+           _check: bool = True,
            **kwargs) -> subprocess.CompletedProcess:
         # docker-compose ps --filter doesn't work without --services
         # see https://github.com/docker/compose/issues/5996
@@ -355,8 +355,8 @@ class SwarmStack(BaseStack):
 
     def ps(self,
            services: List[str] = [],
-           _pipe: bool = True,
-           _check: bool = False,
+           _pipe: bool = False,
+           _check: bool = True,
            **kwargs) -> subprocess.CompletedProcess:
         kwargs['filter'] = () if 'filter' not in kwargs else kwargs['filter']
         kwargs['filter'] += ('label=com.docker.stack.namespace=%s' %
