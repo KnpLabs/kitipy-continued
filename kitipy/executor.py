@@ -504,6 +504,49 @@ class Executor(object):
         return self._ssh_config is not None
 
 
+def _create_executor(config: Dict, stage_name: str,
+                     dispatcher: Dispatcher) -> Executor:
+    """Instantiate a new executor for the given stage.
+
+    Args:
+        config (Dict):
+            The whole kitipy config.
+        stage_name (str):
+            The name of the stage to instantiate an Executor for.
+        dispatcher (Dispatcher):
+            The dispatcher later used by the instantiated Executor.
+    """
+
+    stage = config['stages'][stage_name]
+
+    if stage.get('type', None) not in ('remote', 'local'):
+        raise click.BadParameter(
+            'Stage "%s" has no "type" field or its value is invalid (should be either: local or remote).'
+            % (stage_name))
+
+    if stage['type'] == 'local':
+        # @TODO: local executor base path should be configurable through stage params
+        return Executor(os.getcwd(), dispatcher)
+
+    if 'hostname' not in stage:
+        raise click.BadParameter(
+            'Remote stage "%s" has no hostname field defined.' % (stage))
+
+    # @TODO: verify and explain better all the mess around basedir/cwd
+    basedir = stage.get('basedir', '~/')
+    params = {
+        'hostname': stage['hostname'],
+    }
+
+    if 'ssh_config' in config:
+        params['ssh_config_file'] = config['ssh_config']
+    if 'paramiko_config' in config:
+        # @TODO: we shouldn't be that much permissive with paramiko config
+        params['paramiko_config'] = config['paramiko_config']
+
+    return Executor(basedir, dispatcher, **params)
+
+
 class InteractiveWarningPolicy(paramiko.MissingHostKeyPolicy):
     """InteractiveWarningPolicy implements a paramiko MissingHostKeyPolicy
     that uses click.confirmation() helper to ask for confirmation when a new

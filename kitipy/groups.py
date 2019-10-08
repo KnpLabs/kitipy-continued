@@ -6,7 +6,7 @@ from typing import Callable, Dict, Optional
 from . import filters
 from .context import Context, pass_context, get_current_context, get_current_executor
 from .dispatcher import Dispatcher
-from .executor import Executor
+from .executor import Executor, _create_executor
 from .utils import load_config_file, normalize_config, set_up_file_transfer_listeners
 
 
@@ -412,7 +412,7 @@ def group(name: Optional[str] = None, **attrs):
             increasing the Group reusability.
         **attrs:
             Any other parameter accepted by click.command().
-    
+
     Returns
         Callable: The decorator to apply to the group function.
     """
@@ -450,55 +450,10 @@ def _init_stage_group_wrapper(f):
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
         kctx = get_current_context()
-        stage_name = kctx.meta['stage']
-        kctx.executor = _create_executor(kctx.config, stage_name,
-                                         kctx.dispatcher)
+        kctx.with_stage(kctx.meta['stage'])
         return f(kctx, *args, **kwargs)
 
     return wrapper
-
-
-def _create_executor(config: Dict, stage_name: str,
-                     dispatcher: Dispatcher) -> Executor:
-    """Instantiate a new executor for the given stage.
-
-    Args:
-        config (Dict):
-            The whole kitipy config.
-        stage_name (str):
-            The name of the stage to instantiate an Executor for.
-        dispatcher (Dispatcher):
-            The dispatcher later used by the instantied Executor.
-    """
-
-    stage = config['stages'][stage_name]
-
-    if stage.get('type', None) not in ('remote', 'local'):
-        raise click.BadParameter(
-            'Stage "%s" has no "type" field or its value is invalid (should be either: local or remote).'
-            % (stage_name))
-
-    if stage['type'] == 'local':
-        # @TODO: local executor base path should be configurable through stage params
-        return Executor(os.getcwd(), dispatcher)
-
-    if 'hostname' not in stage:
-        raise click.BadParameter(
-            'Remote stage "%s" has no hostname field defined.' % (stage))
-
-    # @TODO: verify and explain better all the mess around basedir/cwd
-    basedir = stage.get('basedir', '~/')
-    params = {
-        'hostname': stage['hostname'],
-    }
-
-    if 'ssh_config' in config:
-        params['ssh_config_file'] = config['ssh_config']
-    if 'paramiko_config' in config:
-        # @TODO: we shouldn't be that much permissive with paramiko config
-        params['paramiko_config'] = config['paramiko_config']
-
-    return Executor(basedir, dispatcher, **params)
 
 
 def _init_stack_group_wrapper(f):

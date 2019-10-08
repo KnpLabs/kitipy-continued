@@ -2,7 +2,7 @@ import click
 import subprocess
 from typing import Any, Dict, List, Optional
 from .dispatcher import Dispatcher
-from .executor import Executor
+from .executor import Executor, _create_executor
 
 
 class Context(object):
@@ -70,6 +70,19 @@ class Context(object):
         self.stack = stack
         self.executor = executor
         self.dispatcher = dispatcher
+
+    def with_stage(self, stage_name: str):
+        """Change the current Context stage.
+
+        Args:
+            stage_name (str): Name of the stage to use.
+
+        Raises:
+            KeyError: If the stage couldn't be found in the Context config.
+        """
+        self.stage = self.config['stages'][stage_name]
+        self.executor = _create_executor(self.config, stage_name,
+                                         self.dispatcher)
 
     def run(self, cmd: str, **kwargs) -> subprocess.CompletedProcess:
         """This method is the way to ubiquitously run a command on either local
