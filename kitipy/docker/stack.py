@@ -79,6 +79,10 @@ class BaseStack(ABC):
                 **kwargs) -> subprocess.CompletedProcess:
         pass
 
+    @abstractmethod
+    def get_ip_address(self, service: str, network: str):
+        pass
+
 
 class ComposeStack(BaseStack):
     def __init__(self,
@@ -197,7 +201,7 @@ class ComposeStack(BaseStack):
              _check: bool = True,
              **kwargs) -> subprocess.CompletedProcess:
         exec = append_cmd_flags('docker-compose exec', **kwargs)
-        return self._run('%s %s %s' % (exec, service, ' '.join(cmd)),
+        return self._run('%s %s %s' % (exec, service, cmd),
                          pipe=_pipe,
                          check=_check)
 
@@ -225,15 +229,8 @@ class ComposeStack(BaseStack):
                          pipe=_pipe,
                          check=_check)
 
-    def raw(self, args: List[str]):
-        cmd = 'docker-compose %s' % (' '.join(args))
-        return self._run(cmd)
-
     def get_ip_address(self, service: str, network: str):
-        inspect = self.inspect(service)
-        if inspect.returncode != 0:
-            raise RuntimeError('Could not inspect service %s.' % (service))
-
+        inspect = self.inspect(service, _pipe=True)
         data = json.loads(inspect.stdout)
         return data[0]['NetworkSettings']['Networks'][network]['IPAddress']
 
@@ -390,7 +387,7 @@ class SwarmStack(BaseStack):
              **kwargs) -> subprocess.CompletedProcess:
         # @TODO: this is not going to work (docker-compose in SwarmStack)
         basecmd = append_cmd_flags('docker-compose exec', **kwargs)
-        return self._run('%s %s %s' % (basecmd, service, ' '.join(cmd)),
+        return self._run('%s %s %s' % (basecmd, service, cmd),
                          pipe=_pipe,
                          check=_check)
 
@@ -418,6 +415,11 @@ class SwarmStack(BaseStack):
         return self._run('%s %s_%s_%d' % (cmd, self.name, service, replica_id),
                          pipe=_pipe,
                          check=_check)
+
+    def get_ip_address(self, service: str, network: str):
+        inspect = self.inspect(service, _pipe=True)
+        data = json.loads(inspect.stdout)
+        return data[0]['NetworkSettings']['Networks'][network]['IPAddress']
 
     def _run(self, cmd: str, **kwargs) -> subprocess.CompletedProcess:
         """Execute a command using global env vars and basedir as default values.

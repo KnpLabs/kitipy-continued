@@ -2,6 +2,7 @@ import click
 import os.path
 import paramiko
 import random
+import shutil
 import string
 import subprocess
 import sys
@@ -423,7 +424,6 @@ class Executor(object):
 
     def copy(self, local_path: str, remote_path: str):
         """This method transfers files from your computer to a remote target.
-        It does nothing when executed in local mode.
 
         This method uses the dispatcher to emit events in order to let the UI
         display what's going on.
@@ -432,7 +432,8 @@ class Executor(object):
             local_path (str): Path to the file to transfer.
             remote_path (str): Destination path on the remote target.
         """
-        if not self.is_remote:
+        if self.is_local:
+            shutil.copy(local_path, remote_path)
             return
 
         size = os.path.getsize(local_path)
