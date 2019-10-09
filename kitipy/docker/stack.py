@@ -229,6 +229,10 @@ class ComposeStack(BaseStack):
                          pipe=_pipe,
                          check=_check)
 
+    def raw(self, args: List[str]):	
+        cmd = 'docker-compose %s' % (' '.join(args))	
+        return self._run(cmd)
+
     def get_ip_address(self, service: str, network: str):
         inspect = self.inspect(service, _pipe=True)
         data = json.loads(inspect.stdout)
