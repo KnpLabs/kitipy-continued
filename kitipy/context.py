@@ -84,6 +84,14 @@ class Context(object):
         self.executor = _create_executor(self.config, stage_name,
                                          self.dispatcher)
 
+    def with_stack(self, stack_name: str):
+        # This has to be imported here to avoid circular dependencies
+        from .docker.stack import load_stack
+
+        self.stack = load_stack(self, stack_name)
+        stack_cfg = self.config['stacks'][stack_name]
+        self.executor.cd(stack_cfg.get('basedir', './'))
+
     def run(self, cmd: str, **kwargs) -> subprocess.CompletedProcess:
         """This method is the way to ubiquitously run a command on either local
         or remote target, depending on how the executor was set.

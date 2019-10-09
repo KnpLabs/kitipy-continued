@@ -466,12 +466,8 @@ def _init_stack_group_wrapper(f):
     """
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
-        # This has to be imported here to avoid circular dependencies
-        from .docker.stack import load_stack
-
         kctx = get_current_context()
-        stack_name = kctx.meta['stack']
-        kctx.stack = load_stack(kctx, stack_name)
+        kctx.with_stack(kctx.meta['stack'])
         return f(kctx, *args, **kwargs)
 
     return wrapper
