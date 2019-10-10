@@ -2,12 +2,13 @@ import click
 import os.path
 import paramiko
 import random
+import select
 import shutil
 import string
 import subprocess
 import sys
 import tempfile
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple, Union
 from .dispatcher import Dispatcher
 
 
@@ -23,6 +24,7 @@ class Executor(object):
     The SSH/SFTP connections are automatically closed when the executor got
     destroyed.
     """
+
     def __init__(self,
                  basedir: str,
                  dispatcher: Dispatcher,
@@ -124,6 +126,7 @@ class Executor(object):
 
                 # Relative identity files are resolved with the base directory
                 # of the SSH config as their relative root.
+                # @TODO: This is unusual (does not follow openssh behavior), maybe remove?
                 if not os.path.isabs(identity_file):
                     key_basedir = os.path.dirname(ssh_config_path)
                     identity_file = os.path.join(key_basedir, identity_file)
@@ -245,10 +248,10 @@ class Executor(object):
             encoding (Optional[str]):
                 Determine the encoding used to convert streams from/to binary format.
             pipe (bool):
-				Whether the subprocess output should be piped to kitipy and
-				made available through the returned subprocess.CompletedProcess
-				(when True), or outputted to kitipy stdout/stderr (when False).
-				This is similar to subprocess.Popen(..., pipe=True).
+                Whether the subprocess output should be piped to kitipy and
+                made available through the returned subprocess.CompletedProcess
+                (when True), or outputted to kitipy stdout/stderr (when False).
+                This is similar to subprocess.Popen(..., pipe=True).
             check (bool):
                 Check if the executed command returns exit code 0 or raise an
                 error otherwise.
@@ -261,16 +264,24 @@ class Executor(object):
         """
         cwd = cwd or self._basedir
 
-        return subprocess.run(cmd,
-                              env=env,
-                              cwd=cwd,
-                              shell=shell,
-                              input=input,
-                              text=text,
-                              encoding=encoding,
-                              stdout=subprocess.PIPE if pipe else None,
-                              stderr=subprocess.PIPE if pipe else None,
-                              check=check)
+        res = subprocess.run(cmd,
+                             env=env,
+                             cwd=cwd,
+                             shell=shell,
+                             input=input,
+                             text=text,
+                             encoding=encoding,
+                             stdout=subprocess.PIPE if pipe else None,
+                             stderr=subprocess.PIPE if pipe else None,
+                             check=check)
+
+        # Take care of initializing stdout/stderr to avoid dumb bugs. Also this
+        # is consistent with _remote() behavior (return empty strings when the
+        # command fail and check is False).
+        res.stdout = res.stdout if res.stdout else ''
+        res.stderr = res.stderr if res.stderr else ''
+
+        return res
 
     # @TODO: emulate pipe/nopipe behavior for remote mode.
     def _remote(
@@ -281,7 +292,8 @@ class Executor(object):
             input: Optional[str] = None,
             text: bool = True,
             encoding: Optional[str] = None,
-            check: bool = False,
+            pipe: bool = False,
+            check: bool = True,
     ) -> subprocess.CompletedProcess:
         """Run a command on remote host.
 
@@ -300,9 +312,15 @@ class Executor(object):
                 strings using encoding parameter or kept in binary format.
             encoding (Optional[str]):
                 Determine the encoding used to convert streams from/to binary format.
+            pipe (bool):
+                Whether the subprocess output should be piped to kitipy and
+                made available through the returned subprocess.CompletedProcess
+                (when True), or outputted to kitipy stdout/stderr (when False).
+                This is similar to subprocess.Popen(..., pipe=True).
             check (bool):
                 Check if the executed command returns exit code 0 or raise an
                 error otherwise.
+
         Raises:
             RuntimeError: When the Executor is running in local mode.
             
@@ -315,33 +333,73 @@ class Executor(object):
         Returns:
             subprocess.CompletedProcess
         """
-        cwd = cwd or self._basedir
-
         if not self.is_remote:
             raise RuntimeError(
                 'This Executor is running in local mode, could not run following command: %s'
                 % (cmd))
 
-        self.ssh.exec_command('cd ' + cwd)
+        cwd = cwd or self._basedir
+        encoding = encoding if encoding else sys.getdefaultencoding()
 
-        streams = self.ssh.exec_command(cmd, environment=env)
+        self.ssh.exec_command('cd ' + cwd)
+        sin, sout, serr = self.ssh.exec_command(cmd, environment=env)
+        channel = sin.channel
 
         if input is not None:
-            streams[0].write(input)
+            sin.write(input)
 
-        # Following line is blocking until the remote process has ended. We can
-        # then retrieve the exit code and fully read stdout/stderr.
-        returncode = streams[0].channel.recv_exit_status()
-        out = streams[1].read()
-        err = streams[2].read()
+        # We don't need stdin anymore, close it
+        sin.close()
+        channel.shutdown_write()
+
+        stdout, stderr = self._read_ssh_chunks(channel, text, encoding, pipe)
+        while not channel.closed or channel.recv_ready(
+        ) or channel.recv_stderr_ready():
+            rlist, _, _ = select.select([channel], [], [])
+
+            if len(rlist) > 0:
+                chunks = self._read_ssh_chunks(channel, text, encoding, pipe)
+                stdout += chunks[0]  # type: ignore
+                stderr += chunks[1]  # type: ignore
+
+            if channel.exit_status_ready(
+            ) and not channel.recv_ready() and not channel.recv_stderr_ready():
+                channel.shutdown_read()
+                channel.close()
+                break
+
+        sout.close()
+        serr.close()
+
+        returncode = sin.channel.recv_exit_status()
+        return subprocess.CompletedProcess(cmd, returncode, stdout, stderr)
+
+    def _read_ssh_chunks(
+            self,
+            channel: paramiko.channel.Channel,
+            text: bool,
+            encoding: str,
+            pipe: bool,
+    ) -> Tuple[Union[bytes, str], Union[bytes, str]]:
+        stdout_chunk = b''  # type: Union[bytes, str]
+        stderr_chunk = b''  # type: Union[bytes, str]
+
+        if channel.recv_ready():
+            stdout_chunk = channel.recv(len(channel.in_buffer))
+        if channel.recv_stderr_ready():
+            stderr_chunk = channel.recv(len(channel.in_stderr_buffer))
 
         if text:
-            if encoding is None:
-                encoding = sys.getdefaultencoding()
-            out = out.decode(encoding)
-            err = err.decode(encoding)
+            stdout_chunk = stdout_chunk.decode(encoding)  # type: ignore
+            stderr_chunk = stderr_chunk.decode(encoding)  # type: ignore
 
-        return subprocess.CompletedProcess(cmd, returncode, out, err)
+        if not pipe:
+            print(stdout_chunk, file=sys.stdout, end='')
+            print(stderr_chunk, file=sys.stderr, end='')
+            stdout_chunk = ''
+            stderr_chunk = ''
+
+        return (stdout_chunk, stderr_chunk)
 
     # @TODO: cmd signature have to be changed to accept list too (due to shell opts)
     def run(
@@ -410,6 +468,7 @@ class Executor(object):
                                 input=input,
                                 text=text,
                                 encoding=encoding,
+                                pipe=pipe,
                                 check=check)
 
         return self.local(cmd,
@@ -554,6 +613,7 @@ class InteractiveWarningPolicy(paramiko.MissingHostKeyPolicy):
     host_key is detected. This is the default paramiko MissingHostKeyPolicy
     used by kitipy.
     """
+
     def missing_host_key(self, client, hostname, key):
         confirm_msg = "WARNING: Host key for %s not found (%s). Do you want to add it to your ~/.ssh/known_hosts?" % (
             hostname, key)

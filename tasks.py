@@ -93,6 +93,9 @@ def test_unit(kctx: kitipy.Context):
     kctx.local("ssh-keygen -R '[127.0.0.1]:2023' 1>/dev/null 2>&1")
     kctx.local("ssh-keygen -R testhost 1>/dev/null 2>&1")
 
+    # Ensure the private key has the right chmod or the task might fail.
+    os.chmod("tests/.ssh/id_rsa", 0o0600)
+
     # Ensure first that we're actually able to connect to SSH hosts, or
     # tests will fail anyway.
     kctx.local('ssh -F tests/.ssh/config testhost /bin/true 1>/dev/null 2>&1')
