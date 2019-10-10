@@ -1,3 +1,4 @@
+import os
 import subprocess
 from ..context import Context, get_current_executor
 from ..utils import append_cmd_flags
@@ -137,6 +138,29 @@ def buildx_imagetools_inspect(image: str,
     return exec.run("%s >/dev/null 2>&1" % (cmd), pipe=_pipe, check=_check)
 
 
+def buildx_build(context: str, **kwargs) -> subprocess.CompletedProcess:
+    """Run `docker buildx build` (equivalent to `docker build`) through kitipy
+    executor. Supported by Docker +19.03.3.
+
+    Args:
+        context (str):
+            Root dir of the build context.
+        **kwargs:
+            Takes any CLI Flag accepted by `docker buildx build`.
+
+    Raises:
+        subprocess.SubprocessError: When the suprocess fails.
+
+    Returns:
+        :class:`subprocess.CompletedProcess`: When the process is successful.
+    """
+    exec = get_current_executor()
+    cmd = append_cmd_flags('docker buildx build', **kwargs)
+    env = os.environ.copy()
+    env.update({"DOCKER_BUILDKIT": "1", "DOCKER_CLI_EXPERIMENTAL": "enabled"})
+    return exec.local(cmd + ' ' + context, env=env)
+
+
 def container_ps(_pipe: bool = False, _check: bool = True,
                  **kwargs) -> subprocess.CompletedProcess:
     """Run `docker container ps` (equivalent to `docker ps`) through kitipy
@@ -206,6 +230,10 @@ def get_service_labels(kctx: Context, service_name: str) -> List[str]:
     service = services[service_name]
     labels = service.get('labels', [])
 
+    return normalize_labels(labels)
+
+
+def normalize_labels(labels: Union[Dict[str, str], List[str]]) -> List[str]:
     if not isinstance(labels, dict):
         return labels
 

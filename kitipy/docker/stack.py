@@ -4,8 +4,9 @@ import os
 import subprocess
 import yaml
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
+from .actions import buildx_build, normalize_labels
 from ..context import Context
 from ..executor import Executor
 from ..utils import append_cmd_flags
@@ -14,12 +15,21 @@ from ..utils import append_cmd_flags
 class BaseStack(ABC):
     @property
     @abstractmethod
+    def name(self):
+        pass
+
+    @property
+    @abstractmethod
     def config(self):
         pass
 
     @abstractmethod
     def build(self, services: List[str] = [],
               **kwargs) -> subprocess.CompletedProcess:
+        pass
+
+    @abstractmethod
+    def buildx_build(self, services: List[str] = [], **kwargs):
         pass
 
     @abstractmethod
@@ -90,7 +100,7 @@ class ComposeStack(BaseStack):
                  stack_name='',
                  file='',
                  basedir: str = None):
-        self.name = stack_name
+        self._name = stack_name
         self._executor = executor
         self._env = os.environ.copy()
         self._env.update({
@@ -100,6 +110,10 @@ class ComposeStack(BaseStack):
         self._basedir = basedir
         self._loaded = False
         self._config = None
+
+    @property
+    def name(self):
+        return self._name
 
     @property
     def config(self):
@@ -127,6 +141,24 @@ class ComposeStack(BaseStack):
         return self._run('%s %s' % (cmd, ' '.join(services)),
                          pipe=_pipe,
                          check=_check)
+
+    def buildx_build(self, services: List[str] = [], **kwargs):
+        """Mimic `docker-compose build` using `docker buildx build`.
+        
+        Unlike other actions, this one doesn't support usual _pipe and _check
+        as it makes little sense to pipe the content of all the commands run.
+
+        Args:
+            services (Optional[List[str]]): List of services to build. All
+                the services are built if None is passed (the default value).
+            **kwargs: Flags passed to `docker buildx build`.
+        
+        Raises:
+            subprocess.SubprocessError: When one of the build fails.
+        """
+        basedir = self._basedir or os.getcwd()
+        services = services or []
+        _buildx_build_stack(self._executor, self, services, basedir, **kwargs)
 
     def push(self,
              services: List[str] = [],
@@ -250,7 +282,7 @@ class SwarmStack(BaseStack):
                  stack_name='',
                  file='',
                  basedir: str = None):
-        self.name = stack_name
+        self._name = stack_name
         self._executor = executor
         self._env = {
             'COMPOSE_FILE': file,
@@ -258,6 +290,10 @@ class SwarmStack(BaseStack):
         self._basedir = basedir
         self._loaded = False
         self._config = None
+
+    @property
+    def name(self):
+        return self._name
 
     @property
     def config(self):
@@ -296,6 +332,24 @@ class SwarmStack(BaseStack):
         cmd = '%s %s 2>&1 | grep -v "External secrets are not available"' % (
             cmd, ' '.join(services))
         return self._run(cmd, pipe=_pipe, check=_check)
+
+    def buildx_build(self, services: List[str] = [], **kwargs):
+        """Mimic `docker-compose build` using `docker buildx build`.
+        
+        Unlike other actions, this one doesn't support usual _pipe and _check
+        as it makes little sense to pipe the content of all the commands run.
+
+        Args:
+            services (Optional[List[str]]):
+                List of services to build. All the services are built if an
+                empty list is passed (the default value).
+            **kwargs: Flags passed to `docker buildx build`.
+        
+        Raises:
+            subprocess.SubprocessError: When one of the build fails.
+        """
+        basedir = self._basedir or os.getcwd()
+        _buildx_build_stack(self._executor, self, services, basedir, **kwargs)
 
     def push(self,
              services: List[str] = [],
@@ -478,3 +532,35 @@ def load_stack(kctx: Context, stack_name: str) -> BaseStack:
                         stack_name=stack_name,
                         basedir=stack_basedir,
                         file=stack_file)
+
+
+def _buildx_build_stack(
+        executor: Executor,
+        stack: BaseStack,
+        services: List[str],
+        default_context: str,
+        **kwargs,
+):
+    services_cfg = stack.config.get('services', {})
+
+    for name, service in services_cfg.items():
+        if len(services) > 0 and name not in services:
+            continue
+
+        build = service.get('build', {})
+        build = {"dockerfile": build} if isinstance(build, str) else build
+        build_labels = normalize_labels(build.get('labels', {}))
+        build_args = build.get('args', {})
+
+        args = {}
+        args['target'] = build.get('target')
+        args['label'] = tuple(build_labels)
+        args['args'] = tuple((k, v) for k, v in build_args.items())
+        args['tag'] = service.get('image', "%s/%s:latest" % (stack.name, name))
+        args['file'] = build.get('dockerfile', 'Dockerfile')
+        # Add jwargs at the end only so flags infered from compose config can
+        # be overriden.
+        args.update(kwargs)
+
+        context = build.get('context', default_context)
+        buildx_build(context, **args)

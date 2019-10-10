@@ -121,7 +121,6 @@ def validate_tag(kctx: kitipy.Context, image_ref: str):
 
     images = (service['image'] for service in kctx.stack.config['services'])
     for image in images:
-        result = kitipy.docker.buildx_imagetools_inspect(image_ref,
-                                                         _check=False)
+        result = actions.buildx_imagetools_inspect(image_ref, _check=False)
         if result.returncode != 0:
             kctx.fail('Image %s not found on remote registry.' % (image_ref))

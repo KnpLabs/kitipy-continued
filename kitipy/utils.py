@@ -160,6 +160,8 @@ def append_cmd_flags(cmd: str, **kwargs) -> str:
         sep = ' ' if len(name) == 1 else '='
         name = '-' + name if len(name) == 1 else '--' + name
 
+        if value is None:
+            continue
         if type(value) == tuple:
             for single_value in value:
                 cmd = _append_cmd_flag(cmd, name, single_value, sep)
