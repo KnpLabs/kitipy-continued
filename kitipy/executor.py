@@ -251,7 +251,7 @@ class Executor(object):
                 Whether the subprocess output should be piped to kitipy and
                 made available through the returned subprocess.CompletedProcess
                 (when True), or outputted to kitipy stdout/stderr (when False).
-                This is similar to subprocess.Popen(..., pipe=True).
+                This is similar to Popen(..., stdout=PIPE, stderr=PIPE).
             check (bool):
                 Check if the executed command returns exit code 0 or raise an
                 error otherwise.
@@ -316,7 +316,7 @@ class Executor(object):
                 Whether the subprocess output should be piped to kitipy and
                 made available through the returned subprocess.CompletedProcess
                 (when True), or outputted to kitipy stdout/stderr (when False).
-                This is similar to subprocess.Popen(..., pipe=True).
+                This is similar to Popen(..., stdout=PIPE, stderr=PIPE).
             check (bool):
                 Check if the executed command returns exit code 0 or raise an
                 error otherwise.
@@ -443,10 +443,10 @@ class Executor(object):
             encoding (Optional[str]):
                 Determine the encoding used to convert streams from/to binary format.
             pipe (bool):
-				Whether the subprocess output should be piped to kitipy and
-				made available through the returned subprocess.CompletedProcess
-				(when True), or outputted to kitipy stdout/stderr (when False).
-				This is similar to subprocess.Popen(..., pipe=True).
+                Whether the subprocess output should be piped to kitipy and
+                made available through the returned subprocess.CompletedProcess
+                (when True), or outputted to kitipy stdout/stderr (when False).
+                This is similar to Popen(..., stdout=PIPE, stderr=PIPE).
             check (bool):
                 Check if the executed command returns exit code 0 or raise an
                 error otherwise.
