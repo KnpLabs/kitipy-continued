@@ -33,23 +33,13 @@ def format(kctx: kitipy.Context, show_diff, force):
     confirm_message = 'Do you want to reformat your code using yapf?'
 
     if show_diff:
-        diff = local_with_venv(kctx,
-                               'yapf --diff -r kitipy/ tests/ tasks*.py',
-                               check=False,
-                               pipe=True)
-        kctx.echo(diff.stdout, nl=False)
-
-        if diff.returncode != 0 and len(diff.stdout) == 0:
-            raise click.ClickException('Failed to properly execute yapf')
-
-        if len(diff.stdout) == 0:
-            sys.exit(0)
+        diff = local_with_venv(kctx, 'yapf --diff -r kitipy/ tests/ tasks*.py')
         confirm_message = 'Do you want to apply this diff?'
 
     if force == None:
         force = click.confirm(confirm_message, default=True)
     if force:
-        local_with_venv(kctx, 'yapf -vvv -p -i -r kitipy/ tests/ tasks*.py')
+        local_with_venv(kctx, 'yapf -vv -p -i -r kitipy/ tests/ tasks*.py')
 
 
 @root.task()

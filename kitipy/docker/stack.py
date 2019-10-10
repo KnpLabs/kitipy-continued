@@ -12,7 +12,6 @@ from ..utils import append_cmd_flags
 
 
 class BaseStack(ABC):
-
     @property
     @abstractmethod
     def config(self):
@@ -86,7 +85,6 @@ class BaseStack(ABC):
 
 
 class ComposeStack(BaseStack):
-
     def __init__(self,
                  executor: Executor,
                  stack_name='',
@@ -247,7 +245,6 @@ class ComposeStack(BaseStack):
 
 
 class SwarmStack(BaseStack):
-
     def __init__(self,
                  executor: Executor,
                  stack_name='',

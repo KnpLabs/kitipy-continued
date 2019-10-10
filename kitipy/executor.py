@@ -24,7 +24,6 @@ class Executor(object):
     The SSH/SFTP connections are automatically closed when the executor got
     destroyed.
     """
-
     def __init__(self,
                  basedir: str,
                  dispatcher: Dispatcher,
@@ -613,7 +612,6 @@ class InteractiveWarningPolicy(paramiko.MissingHostKeyPolicy):
     host_key is detected. This is the default paramiko MissingHostKeyPolicy
     used by kitipy.
     """
-
     def missing_host_key(self, client, hostname, key):
         confirm_msg = "WARNING: Host key for %s not found (%s). Do you want to add it to your ~/.ssh/known_hosts?" % (
             hostname, key)
