@@ -4,7 +4,7 @@ stacks.
 
 import click
 import kitipy
-from . import stack
+from . import stack, actions
 from .filters import compose_only, swarm_only
 import kitipy.docker.filters
 from typing import List
@@ -68,6 +68,14 @@ def restart(kctx: kitipy.Context, services: List[str]):
 @click.argument('cmd', nargs=-1, type=str)
 def exec(kctx: kitipy.Context, service: str, cmd: List[str]):
     kctx.stack.exec(service, cmd)
+
+
+@docker_tasks.task()
+@click.argument('service', nargs=1, type=str)
+def shell(kctx: kitipy.Context, service: str):
+    shell = actions.find_default_shell(kctx, service)
+    shell = shell if shell else '/bin/sh'
+    kctx.stack.exec(service, shell)
 
 
 @docker_tasks.task()
