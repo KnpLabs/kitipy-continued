@@ -435,9 +435,9 @@ class Executor(object):
         local_fullpath = local_path
         remote_fullpath = remote_path
         if not os.path.isabs(local_fullpath):
-            local_fullpath = os.path.join(self.basedir, local_fullpath)
+            local_fullpath = os.path.join(self._basedir, local_fullpath)
         if not os.path.isabs(remote_fullpath):
-            remote_fullpath = os.path.join(self.basedir, remote_fullpath)
+            remote_fullpath = os.path.join(self._basedir, remote_fullpath)
 
         if self.is_local:
             shutil.copy(local_fullpath, remote_fullpath)
