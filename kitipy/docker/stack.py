@@ -12,6 +12,7 @@ from ..utils import append_cmd_flags
 
 
 class BaseStack(ABC):
+
     @property
     @abstractmethod
     def config(self):
@@ -85,6 +86,7 @@ class BaseStack(ABC):
 
 
 class ComposeStack(BaseStack):
+
     def __init__(self,
                  executor: Executor,
                  stack_name='',
@@ -183,8 +185,8 @@ class ComposeStack(BaseStack):
         return res
 
     def count_services(self, filter: Optional[Dict[str, str]] = None) -> int:
-        services = self.ps(filter=filter)
-        return len(services.stdout.splitlines())
+        res = self.ps(filter=filter, _pipe=True, _check=False)
+        return len(res.stdout.splitlines())
 
     def logs(self,
              services: List[str] = [],
@@ -229,8 +231,8 @@ class ComposeStack(BaseStack):
                          pipe=_pipe,
                          check=_check)
 
-    def raw(self, args: List[str]):	
-        cmd = 'docker-compose %s' % (' '.join(args))	
+    def raw(self, args: List[str]):
+        cmd = 'docker-compose %s' % (' '.join(args))
         return self._run(cmd)
 
     def get_ip_address(self, service: str, network: str):
@@ -245,6 +247,7 @@ class ComposeStack(BaseStack):
 
 
 class SwarmStack(BaseStack):
+
     def __init__(self,
                  executor: Executor,
                  stack_name='',
@@ -369,7 +372,7 @@ class SwarmStack(BaseStack):
         return res
 
     def count_services(self, filter: Optional[Dict[str, str]] = None) -> int:
-        services = self.ps(filter=filter)
+        services = self.ps(filter=filter, _pipe=True, _check=False)
         # @TODO: improve it (this is actually buggy)
         return len(services.stdout.splitlines())
 
