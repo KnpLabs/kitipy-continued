@@ -23,6 +23,7 @@ class Executor(object):
     The SSH/SFTP connections are automatically closed when the executor got
     destroyed.
     """
+
     def __init__(self,
                  basedir: str,
                  dispatcher: Dispatcher,
@@ -272,7 +273,6 @@ class Executor(object):
                               stderr=subprocess.PIPE if pipe else None,
                               check=check)
 
-    # @TODO: emulate pipe/nopipe behavior for remote mode.
     def _remote(
             self,
             cmd: str,
@@ -432,8 +432,15 @@ class Executor(object):
             local_path (str): Path to the file to transfer.
             remote_path (str): Destination path on the remote target.
         """
+        local_fullpath = local_path
+        remote_fullpath = remote_path
+        if not os.path.isabs(local_fullpath):
+            local_fullpath = os.path.join(self.basedir, local_fullpath)
+        if not os.path.isabs(remote_fullpath):
+            remote_fullpath = os.path.join(self.basedir, remote_fullpath)
+
         if self.is_local:
-            shutil.copy(local_path, remote_path)
+            shutil.copy(local_fullpath, remote_fullpath)
             return
 
         size = os.path.getsize(local_path)
@@ -444,7 +451,7 @@ class Executor(object):
             'file_transfer.update', current=current, total=total)
 
         try:
-            self.sftp.put(local_path, remote_path, callback=fn)
+            self.sftp.put(local_fullpath, remote_fullpath, callback=fn)
         finally:
             self._dispatcher.emit('file_transfer.end')
 
@@ -554,6 +561,7 @@ class InteractiveWarningPolicy(paramiko.MissingHostKeyPolicy):
     host_key is detected. This is the default paramiko MissingHostKeyPolicy
     used by kitipy.
     """
+
     def missing_host_key(self, client, hostname, key):
         confirm_msg = "WARNING: Host key for %s not found (%s). Do you want to add it to your ~/.ssh/known_hosts?" % (
             hostname, key)
