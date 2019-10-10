@@ -68,11 +68,6 @@ def test_context_run():
     executor.run.assert_called_once_with(
         'some cmd',
         env={"FOO": "bar"},
-        cwd=None,
-        shell=True,
-        input=None,
-        text=True,
-        encoding=None,
         pipe=True,
         check=False,
     )
