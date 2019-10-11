@@ -2,7 +2,7 @@ import click
 import functools
 import os
 import subprocess
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, List, Optional
 from . import filters
 from .context import Context, pass_context, get_current_context, get_current_executor
 from .dispatcher import Dispatcher
@@ -31,17 +31,17 @@ class Task(click.Command):
     """
     def __init__(self,
                  name: str,
-                 filter: Optional[Callable[[click.Context], bool]] = None,
+                 filters: List[Callable[[click.Context], bool]] = [],
                  cwd: Optional[str] = None,
                  **kwargs):
         """
         Args:
             name (str):
                 Name of the task.
-            filter (Optional[Callable[[click.Context], bool]]):
-                Filter function used to filter out the task based on click
-                Context. When it's not provided, it defaults to a lambda always
-                returning True.
+            filters (List[Callable[[click.Context], bool]]):
+                Filter functions used to filter out the task based on click
+                Context. When it's not provided, the task or group is always 
+                enabled.
                 Click Context is passed as argument as it's the most generic
                 object available (eg. everything is accessible from there).
                 Check native filters to know how to retrieve kitipy Context
@@ -58,7 +58,7 @@ class Task(click.Command):
                 constructor.
         """
         super().__init__(name, **kwargs)
-        self.filter = filter or (lambda _: True)
+        self.filters = filters
         self.cwd = cwd
 
     def is_enabled(self, click_ctx: click.Context) -> bool:
@@ -74,7 +74,10 @@ class Task(click.Command):
             bool: Either this task should be filtered in (True) or
             filtered out (False).
         """
-        return self.filter(click_ctx)
+        for filter in self.filters:
+            if not filter(click_ctx):
+                return False
+        return True
 
     def invoke(self, click_ctx: click.Context):
         """Given a context, this invokes the attached callback (if it exists)
@@ -128,7 +131,7 @@ class Group(click.Group, Task):
     def __init__(self,
                  name=None,
                  commands=None,
-                 filter=None,
+                 filters: List[Callable[[click.Context], bool]] = [],
                  cwd: Optional[str] = None,
                  invoke_on_help: bool = False,
                  **attrs):
@@ -138,8 +141,8 @@ class Group(click.Group, Task):
                 Name of the task Group.
             commands:
                 List of commands to attach to this group.
-            filter (Callable):
-                A function to filter in/out this task group.
+            filters (List[Callable]):
+                A group of functions to filter this task group.
             cwd (str):
                 Base directory where the commands used by this task shoud be
                 executed.
@@ -156,7 +159,7 @@ class Group(click.Group, Task):
         super().__init__(name, commands, **attrs)
         self._stage_group = None
         self._stack_group = None
-        self.filter = filter or (lambda _: True)
+        self.filters = filters
         self.cwd = cwd
         self.invoke_on_help = invoke_on_help
 
@@ -274,7 +277,7 @@ class Group(click.Group, Task):
 
         Also note that the task function that receives this decorator will 
         get the current kitipy.Context as 
-        
+
         Returns
             Callable: The decorator to apply to the group function.
         """
@@ -305,7 +308,7 @@ class Group(click.Group, Task):
 
         return decorator
 
-    def stage_group(self, use_default_group=False, **attrs):
+    def stage_group(self, use_default_group=True, **attrs):
         """This decorator creates a new kitipy.Group and registers it as a
         stage-scoped group on the current Group.
         
@@ -343,8 +346,8 @@ class Group(click.Group, Task):
 
 
 def task(name: Optional[str] = None,
-         local_only: bool = False,
-         remote_only: bool = False,
+         filters: List[Callable[[click.Context], bool]] = [],
+         cwd: Optional[str] = None,
          **attrs):
     """This decorator creates a new kitipy Task. It automatically sets
     the requested filter depending on local_only/remote_only kwargs.
@@ -352,15 +355,10 @@ def task(name: Optional[str] = None,
     Args:
         name (Optional[str]):
             The name of the task. The function name is used by default.
-        local_only (bool):
-            This task should be enabled only when the current kitipy Executor
-            is running in local mode.
-        remote_only (bool):
-            This task should be enabled only when the current kitipy Executor
-            is running in remote mode.
-        filter (Callable):
-            A function to filter in/out this task.
-        cwd (str):
+        filters (List[Callable[[click.Context], bool]]):
+            List of filters passed to the Task constructor. The filter is 
+            added to the list when both are provided.
+        cwd (Optional[str]):
             Base directory where the commands used by this task should be
             executed.
 
@@ -376,13 +374,9 @@ def task(name: Optional[str] = None,
     Returns
         Callable: The decorator to apply to the task function.
     """
-    if local_only:
-        attrs['filter'] = filters.local_only
-
-    if remote_only:
-        attrs['filter'] = filters.remote_only
-        del attrs['remote_only']
-
+    if cwd:
+        attrs['cwd'] = cwd
+    attrs['filters'] = filters
     attrs.setdefault('cls', Task)
     return click.command(name, **attrs)
 
@@ -510,7 +504,7 @@ class RootCommand(Group):
                 If there're multiple stages defined and there're no default stage.
         """
         # RootCommand can't be filtered out, that'd make no sense.
-        kwargs['filter'] = (lambda _: True)
+        kwargs['filters'] = []
         super().__init__(**kwargs)
 
         config = normalize_config(config)

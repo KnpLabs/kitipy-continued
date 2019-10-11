@@ -87,7 +87,7 @@ def inspect(kctx: kitipy.Context, service: str, replica_id: int):
     kctx.stack.inspect(service, replica_id)
 
 
-@docker_tasks.task(filter=compose_only)
+@docker_tasks.task(filters=[compose_only])
 @click.argument('args', nargs=-1, type=click.UNPROCESSED)
 def compose(kctx: kitipy.Context, args: List[str] = []):
     """Run raw docker-compose commands against the current stack."""
