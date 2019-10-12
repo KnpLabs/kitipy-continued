@@ -213,9 +213,14 @@ class Context(object):
 pass_context = click.make_pass_decorator(Context)
 
 
-def get_current_context() -> Context:
+def get_current_context(click_ctx: Optional[click.Context] = None) -> Context:
     """
     Find the current kitipy context or raise an error.
+
+    Args:
+        click_ctx (click.Context):
+            The click.Context where this function should look for a
+            kitipy.Context.
 
     Raises:
         RuntimeError: When no kitipy context has been found.
@@ -224,7 +229,9 @@ def get_current_context() -> Context:
         Context: The current kitipy context.
     """
 
-    click_ctx = click.get_current_context()
+    if click_ctx is None:
+        click_ctx = click.get_current_context()
+
     kctx = click_ctx.find_object(Context)
     if kctx is None:
         raise RuntimeError('No kitipy context found.')
