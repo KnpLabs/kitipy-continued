@@ -60,28 +60,22 @@ def test_invoke_disabled_task_raises_an_exception(click_ctx):
 
 
 def test_task_invoke_updates_the_executor_basedir_using_the_task_cwd(
-        click_ctx, executor):
-    with mock.patch('click.get_current_context') as mock_get_current_click_ctx:
-        mock_get_current_click_ctx.return_value = click_ctx
+        click_ctx, kctx):
+    task = kitipy.Task(name='foobar', cwd='some/base/dir')
+    task.invoke(click_ctx)
 
-        task = kitipy.Task(name='foobar', cwd='some/base/dir')
-        task.invoke(click_ctx)
-
-        executor.cd.assert_called_with('some/base/dir')
+    kctx.cd.assert_called_with('some/base/dir')
 
 
-def test_task_invoke_calls_the_task_callback():
-    with mock.patch('click.get_current_context') as mock_get_current_click_ctx:
+def test_task_invoke_calls_the_task_callback(kctx):
+    task = kitipy.Task(name='foobar')
+    task.callback = mock.Mock()
 
-        task = kitipy.Task(name='foobar')
-        task.callback = mock.Mock()
+    click_ctx = click.Context(task, obj=kctx)
 
-        click_ctx = click.Context(task)
-        mock_get_current_click_ctx.return_value = click_ctx
+    task.invoke(click_ctx)
 
-        task.invoke(click_ctx)
-
-        task.callback.assert_called()
+    task.callback.assert_called()
 
 
 def test_group_is_disabled_when_one_of_its_filter_is_negative(click_ctx):
@@ -117,54 +111,46 @@ def test_invoke_disabled_group_raises_an_exception(click_ctx):
         group.invoke(click_ctx)
 
 
-def test_group_invoke_updates_the_executor_basedir_using_the_group_cwd(
-        kctx, executor):
-    with mock.patch('click.get_current_context') as mock_get_current_click_ctx:
-        group = kitipy.Group(name='foobar',
-                             cwd='some/base/dir',
-                             callback=mock.Mock(),
-                             invoke_without_command=True)
+def test_group_invoke_updates_the_executor_basedir_using_the_group_cwd(kctx):
+    group = kitipy.Group(name='foobar',
+                         cwd='some/base/dir',
+                         callback=mock.Mock(),
+                         invoke_without_command=True)
 
-        click_ctx = click.Context(group, obj=kctx)
-        mock_get_current_click_ctx.return_value = click_ctx
+    click_ctx = click.Context(group, obj=kctx)
+    group.invoke(click_ctx)
 
-        group.invoke(click_ctx)
-
-        executor.cd.assert_called_with('some/base/dir')
-        group.callback.assert_called()
+    kctx.cd.assert_called_with('some/base/dir')
+    group.callback.assert_called()
 
 
 def test_group_merging_adds_source_commands_and_transparent_groups():
     src_foo = kitipy.Task(name='foo')
     src_bar = click.Command(name='bar')
     src_baz = kitipy.Group(name='baz')
-    src_acme = kitipy.Group(name='acme')
-    src = kitipy.Group(commands={
-        'foo': src_foo,
-        'bar': src_bar,
-        'baz': src_baz,
-    })
-    src.add_transparent_group(src_acme)
+    src_acme = kitipy.Group(name='acme', tasks=[src_baz])
+    src = kitipy.Group(commands={'bar': src_bar},
+                       tasks=[src_foo],
+                       transparents=[src_acme])
 
     dest_first = kitipy.Task(name='first')
-    dest = kitipy.Group(commands={'first': dest_first})
+    dest = kitipy.Group(tasks=[dest_first])
     dest.merge(src)
 
-    expected = {
-        'bar': src_bar,
-        'baz': src_baz,
-        'first': dest_first,
-        'foo': src_foo
-    }
-    assert dest.commands == expected
+    expected = [
+        'bar',
+        'baz',
+        'first',
+        'foo',
+    ]
+    assert dest.list_commands(click_ctx) == expected
     assert dest.transparent_groups == [src_acme]
 
 
 def test_group_get_command_looks_for_the_given_command_in_transparent_groups():
     foo = kitipy.Task(name='foo')
-    acme = kitipy.Group(commands={'foo': foo})
-    root = kitipy.Group()
-    root.add_transparent_group(acme)
+    acme = kitipy.Group(name='acme', tasks=[foo])
+    root = kitipy.Group(name='root', transparents=[acme])
 
     click_ctx = click.Context(root)
     assert root.get_command(click_ctx, 'foo') == foo
@@ -172,8 +158,7 @@ def test_group_get_command_looks_for_the_given_command_in_transparent_groups():
 
 def test_group_get_command_cannot_retrieve_transparent_groups_themselves():
     acme = kitipy.Group(name='acme')
-    root = kitipy.Group()
-    root.add_transparent_group(acme)
+    root = kitipy.Group(transparents=[acme])
 
     click_ctx = click.Context(root)
     assert root.get_command(click_ctx, 'acme') is None
@@ -182,7 +167,7 @@ def test_group_get_command_cannot_retrieve_transparent_groups_themselves():
 def test_group_get_command_still_retrieves_usual_commands():
     foo = kitipy.Task(name='foo')
     bar = click.Command(name='bar')
-    root = kitipy.Group(commands={'foo': foo, 'bar': bar})
+    root = kitipy.Group(commands={'bar': bar}, tasks=[foo])
 
     click_ctx = click.Context(root)
     assert root.get_command(click_ctx, 'foo') is not None
@@ -191,7 +176,7 @@ def test_group_get_command_still_retrieves_usual_commands():
 
 def test_group_get_command_fails_to_find_disabled_tasks():
     foo = kitipy.Task(name='foo', filters=[lambda _: False])
-    root = kitipy.Group(commands={'foo': foo})
+    root = kitipy.Group(tasks=[foo])
 
     click_ctx = click.Context(root)
     assert root.get_command(click_ctx, 'foo') is None
@@ -200,9 +185,8 @@ def test_group_get_command_fails_to_find_disabled_tasks():
 def test_group_get_command_fails_to_find_disabled_tasks_from_transparent_group(
 ):
     foo = kitipy.Task(name='foo', filters=[lambda _: False])
-    acme = kitipy.Group(commands={'foo': foo})
-    root = kitipy.Group(name='root')
-    root.add_transparent_group(acme)
+    acme = kitipy.Group(tasks=[foo])
+    root = kitipy.Group(name='root', transparents=[acme])
 
     click_ctx = click.Context(root)
     assert root.get_command(click_ctx, 'foo') is None
@@ -211,9 +195,8 @@ def test_group_get_command_fails_to_find_disabled_tasks_from_transparent_group(
 def test_group_get_command_raises_an_exception_if_the_name_of_a_command_and_of_a_task_from_a_transparent_group_collides(
 ):
     foo = kitipy.Task(name='foo')
-    acme = kitipy.Group(name='acme', commands={'foo': foo})
-    root = kitipy.Group(commands={'foo': foo})
-    root.add_transparent_group(acme)
+    acme = kitipy.Group(name='acme', tasks=[foo])
+    root = kitipy.Group(tasks=[foo], transparents=[acme])
 
     click_ctx = click.Context(root)
     with pytest.raises(RuntimeError):
@@ -223,12 +206,10 @@ def test_group_get_command_raises_an_exception_if_the_name_of_a_command_and_of_a
 def test_group_get_command_raises_an_exception_if_the_name_of_tasks_from_two_transparent_groups_collides(
 ):
     foo = kitipy.Task(name='foo')
-    acme = kitipy.Group(name='acme', commands={'foo': foo})
-    plop = kitipy.Group(name='plop', commands={'foo': foo})
+    acme = kitipy.Group(name='acme', tasks=[foo])
+    plop = kitipy.Group(name='plop', tasks=[foo])
 
-    root = kitipy.Group()
-    root.add_transparent_group(acme)
-    root.add_transparent_group(plop)
+    root = kitipy.Group(transparents=[acme, plop])
 
     click_ctx = click.Context(root)
     with pytest.raises(RuntimeError):
@@ -239,16 +220,16 @@ def test_group_list_commands_looks_for_commands_in_transparent_groups():
     foo = kitipy.Task(name='foo')
     bar = kitipy.Task(name='bar')
     foobar = kitipy.Task(name='foobar', filters=[lambda _: False])
-    acme = kitipy.Group(name='acme', commands={'foo': foo})
-    plop = kitipy.Group(name='plop', commands={'bar': bar, 'foobar': foobar})
+    acme = kitipy.Group(name='acme', tasks=[foo])
+    plop = kitipy.Group(name='plop', tasks=[bar, foobar])
 
     ktp = kitipy.Task(name='ktp')
     baz = click.Command(name='baz')
     knp = kitipy.Task(name='knp', filters=[lambda _: False])
 
-    root = kitipy.Group(commands={'ktp': ktp, 'baz': baz, 'knp': knp})
-    root.add_transparent_group(acme)
-    root.add_transparent_group(plop)
+    root = kitipy.Group(commands={'baz': baz},
+                        tasks=[ktp, knp],
+                        transparents=[acme, plop])
 
     click_ctx = click.Context(root)
     assert root.list_commands(click_ctx) == ['bar', 'baz', 'foo', 'ktp']
@@ -257,9 +238,8 @@ def test_group_list_commands_looks_for_commands_in_transparent_groups():
 def test_group_list_command_raises_an_exception_if_the_name_of_a_command_and_of_a_task_from_a_transparent_group_collides(
 ):
     foo = kitipy.Task(name='foo')
-    acme = kitipy.Group(name='acme', commands={'foo': foo})
-    root = kitipy.Group(commands={'foo': foo})
-    root.add_transparent_group(acme)
+    acme = kitipy.Group(name='acme', tasks=[foo])
+    root = kitipy.Group(tasks=[foo], transparents=[acme])
 
     click_ctx = click.Context(root)
     with pytest.raises(RuntimeError):
@@ -269,12 +249,10 @@ def test_group_list_command_raises_an_exception_if_the_name_of_a_command_and_of_
 def test_group_list_commands_raises_an_exception_if_the_name_of_tasks_from_two_transparent_groups_collides(
 ):
     foo = kitipy.Task(name='foo')
-    acme = kitipy.Group(name='acme', commands={'foo': foo})
-    plop = kitipy.Group(name='plop', commands={'foo': foo})
+    acme = kitipy.Group(name='acme', tasks=[foo])
+    plop = kitipy.Group(name='plop', tasks=[foo])
 
-    root = kitipy.Group()
-    root.add_transparent_group(acme)
-    root.add_transparent_group(plop)
+    root = kitipy.Group(transparents=[acme, plop])
 
     click_ctx = click.Context(root)
     with pytest.raises(RuntimeError):
@@ -285,7 +263,7 @@ def test_task_decorator_from_group_object_creates_a_new_task_object():
     root = kitipy.Group(name='root')
     task = root.task(name='foo', cwd='some/base/dir')(lambda _: ())
 
-    assert root.commands['foo'] == task
+    assert root.tasks == [task]
     assert isinstance(task, kitipy.Task)
     assert task.name == 'foo'
     assert task.cwd == 'some/base/dir'
@@ -295,7 +273,7 @@ def test_group_decorator_from_group_object_creates_a_child_group():
     root = kitipy.Group(name='root')
     acme = root.group(name='acme', cwd='some/basedir')(lambda _: ())
 
-    assert root.commands['acme'] == acme
+    assert root.tasks == [acme]
     assert isinstance(acme, kitipy.Group)
     assert acme.name == 'acme'
     assert acme.cwd == 'some/basedir'
@@ -411,30 +389,6 @@ def test_adding_a_stacks_group_to_a_whole_stages_group_adds_it_to_all_of_the_sta
 
     assert dev_group.list_commands(click_ctx) == ['api', 'front']
     assert prod_group.list_commands(click_ctx) == ['api', 'front']
-
-
-# def test_set_default_subgroups_params_for_stages_group(click_ctx):
-#     stages = kitipy.StageGroup(name='stages',
-#                                subgroups_params={'stack': 'my-unique-stack'})
-#
-#     assert stages.all.subgroups_params == ['my-unique-stack']
-#
-#     config = {
-#         'stages': {
-#             'dev': {},
-#             'prod': {}
-#         },
-#         'stacks': {
-#             'my-unique-stack': {}
-#         }
-#     }
-#     kctx.config = mock.PropertyMock(wraps=config)
-#
-#     dev_group = stages.get_command(click_ctx, 'dev')
-#     prod_group = stages.get_command(click_ctx, 'prod')
-#
-#     assert dev_group.stack == 'my-unique-stack'
-#     assert prod_group.stack == 'my-unique-stack'
 
 
 def test_adding_a_stages_group_to_another_stages_group_raises_an_exception(

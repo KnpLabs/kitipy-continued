@@ -40,19 +40,22 @@ def root():
 @click.option('--force', is_flag=True, default=None)
 def format(kctx: kitipy.Context, show_diff, force):
     """Run yapf to detect style divergences and fix them."""
-    confirm_message = 'Do you want to reformat your code using yapf?'
-    apply = show_diff is False
+    if not show_diff and not fix:
+        kctx.fail(
+            "You can't use both --no-diff and --no-fix at the same time.")
 
-    if show_diff:
-        diff = kctx.local('yapf --diff -r kitipy/ tests/ tasks*.py',
-                          check=False)
-        confirm_message = 'Do you want to apply this diff?'
-        apply = diff.returncode != 0
+    confirm_msg = 'Do you want to reformat your code using yapf?'
 
-    if force is None and apply:
-        force = click.confirm(confirm_message, default=True)
-    if force and apply:
-        kctx.local('yapf -vv -p -i -r kitipy/ tests/ tasks*.py')
+    dry_run = lambda: kctx.local('yapf --diff -r kitipy/ tests/ tasks*.py',
+                                 check=False)
+    apply = lambda: kctx.local('yapf -vv -p -i -r kitipy/ tests/ tasks*.py')
+
+    kitipy.confirm_and_apply(dry_run,
+                             confirm_msg,
+                             apply,
+                             show_dry_run=show_diff,
+                             ask_confirm=fix is None,
+                             should_apply=fix if fix is not None else True)
 
 
 @root.task()
