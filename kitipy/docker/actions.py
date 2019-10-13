@@ -1,7 +1,8 @@
+import os
 import subprocess
-from ..context import get_current_executor
+from ..context import Context, get_current_executor
 from ..utils import append_cmd_flags
-from typing import Any, Dict, List, Sequence, Union
+from typing import Any, Dict, List, Optional, Union
 
 
 def network_ls(_pipe: bool = False, _check: bool = True,
@@ -137,6 +138,29 @@ def buildx_imagetools_inspect(image: str,
     return exec.run("%s >/dev/null 2>&1" % (cmd), pipe=_pipe, check=_check)
 
 
+def buildx_build(context: str, **kwargs) -> subprocess.CompletedProcess:
+    """Run `docker buildx build` (equivalent to `docker build`) through kitipy
+    executor. Supported by Docker +19.03.3.
+
+    Args:
+        context (str):
+            Root dir of the build context.
+        **kwargs:
+            Takes any CLI Flag accepted by `docker buildx build`.
+
+    Raises:
+        subprocess.SubprocessError: When the suprocess fails.
+
+    Returns:
+        :class:`subprocess.CompletedProcess`: When the process is successful.
+    """
+    exec = get_current_executor()
+    cmd = append_cmd_flags('docker buildx build', **kwargs)
+    env = os.environ.copy()
+    env.update({"DOCKER_BUILDKIT": "1", "DOCKER_CLI_EXPERIMENTAL": "enabled"})
+    return exec.local(cmd + ' ' + context, env=env)
+
+
 def container_ps(_pipe: bool = False, _check: bool = True,
                  **kwargs) -> subprocess.CompletedProcess:
     """Run `docker container ps` (equivalent to `docker ps`) through kitipy
@@ -195,3 +219,43 @@ def container_run(image: str,
     shcmd = append_cmd_flags('docker container run', **kwargs)
     shcmd += ' %s %s' % (image, cmd)
     return exec.run(shcmd, pipe=_pipe, check=_check)
+
+
+def get_service_labels(kctx: Context, service_name: str) -> List[str]:
+    """
+    Raises:
+        KeyError: when service_name does not exist in this stack config.
+    """
+    services = kctx.stack.config.get('services', {})
+    service = services[service_name]
+    labels = service.get('labels', [])
+
+    return normalize_labels(labels)
+
+
+def normalize_labels(labels: Union[Dict[str, str], List[str]]) -> List[str]:
+    if not isinstance(labels, dict):
+        return labels
+
+    return [k + "=" + v for k, v in labels.items()]
+
+
+def find_service_label(kctx: Context,
+                       service_name: str,
+                       label: str,
+                       one: bool = False) -> Union[None, str, List[str]]:
+    pattern = label + "="
+    plen = len(pattern)
+
+    labels = get_service_labels(kctx, service_name)
+    found = [label[plen:] for v in labels if v.startswith(pattern)]
+
+    if one:
+        return found[0] if len(found) > 0 else None
+
+    return found
+
+
+def find_default_shell(kctx: Context, service_name: str) -> Optional[str]:
+    label = "io.kitipy.docker.default_shell"
+    return kctx.stack.find_service_label(service_name, label, one=True)

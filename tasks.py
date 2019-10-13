@@ -31,14 +31,18 @@ def root():
 def format(kctx: kitipy.Context, show_diff, force):
     """Run yapf to detect style divergences and fix them."""
     confirm_message = 'Do you want to reformat your code using yapf?'
+    apply = show_diff is False
 
     if show_diff:
-        diff = local_with_venv(kctx, 'yapf --diff -r kitipy/ tests/ tasks*.py')
+        diff = local_with_venv(kctx,
+                               'yapf --diff -r kitipy/ tests/ tasks*.py',
+                               check=False)
         confirm_message = 'Do you want to apply this diff?'
+        apply = diff.returncode != 0
 
-    if force == None:
+    if force is None and apply:
         force = click.confirm(confirm_message, default=True)
-    if force:
+    if force and apply:
         local_with_venv(kctx, 'yapf -vv -p -i -r kitipy/ tests/ tasks*.py')
 
 

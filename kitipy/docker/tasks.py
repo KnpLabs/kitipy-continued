@@ -4,7 +4,7 @@ stacks.
 
 import click
 import kitipy
-from . import stack
+from . import stack, actions
 from .filters import compose_only, swarm_only
 import kitipy.docker.filters
 from typing import List
@@ -71,6 +71,14 @@ def exec(kctx: kitipy.Context, service: str, cmd: List[str]):
 
 
 @docker_tasks.task()
+@click.argument('service', nargs=1, type=str)
+def shell(kctx: kitipy.Context, service: str):
+    shell = actions.find_default_shell(kctx, service)
+    shell = shell if shell else '/bin/sh'
+    kctx.stack.exec(service, shell)
+
+
+@docker_tasks.task()
 @click.argument('service', type=str, required=True)
 @click.argument('cmd', nargs=-1, type=str)
 @click.option('-u', 'user', default=None)
@@ -113,7 +121,6 @@ def validate_tag(kctx: kitipy.Context, image_ref: str):
 
     images = (service['image'] for service in kctx.stack.config['services'])
     for image in images:
-        result = kitipy.docker.buildx_imagetools_inspect(image_ref,
-                                                         _check=False)
+        result = actions.buildx_imagetools_inspect(image_ref, _check=False)
         if result.returncode != 0:
             kctx.fail('Image %s not found on remote registry.' % (image_ref))

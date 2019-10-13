@@ -1,6 +1,7 @@
+from . import actions as docker_actions
+from . import filters as docker_filters
+from . import tasks as docker_tasks
 from .stack import BaseStack, ComposeStack, SwarmStack, load_stack
-from .actions import network_ls, network_create, secret_create, buildx_imagetools_inspect, container_ps, container_run
-from . import filters, tasks
 
 __all__ = [
     #from stack module
@@ -9,15 +10,8 @@ __all__ = [
     'SwarmStack',
     'load_stack',
 
-    # From actions module
-    'network_ls',
-    'network_create',
-    'secret_create',
-    'buildx_imagetools_inspect',
-    'container_ps',
-    'container_run',
-
     # submodules
-    'filters',
-    'tasks',
+    'docker_actions',
+    'docker_filters',
+    'docker_tasks',
 ]

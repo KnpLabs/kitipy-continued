@@ -6,7 +6,7 @@ through kitipy.command() and kitipy.group() decorators.
 
 import click
 import kitipy
-from . import ComposeStack, SwarmStack
+from .stack import ComposeStack, SwarmStack
 from typing import Callable, Type
 
 
