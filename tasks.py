@@ -37,8 +37,8 @@ def root():
 
 @root.task()
 @click.option('--diff/--no-diff', 'show_diff', default=True)
-@click.option('--force', is_flag=True, default=None)
-def format(kctx: kitipy.Context, show_diff, force):
+@click.option('--fix/--no-fix', default=None)
+def format(kctx: kitipy.Context, show_diff, fix):
     """Run yapf to detect style divergences and fix them."""
     if not show_diff and not fix:
         kctx.fail(

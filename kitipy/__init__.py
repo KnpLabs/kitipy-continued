@@ -40,6 +40,7 @@ __all__ = [
     'normalize_config',
     'set_up_file_transfer_listeners',
     'wait_for',
+    'confirm_and_apply',
 
     # action modules
     'ansible_actions',
