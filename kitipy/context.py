@@ -2,10 +2,10 @@ import click
 import subprocess
 from typing import Any, Dict, List, Optional
 from .dispatcher import Dispatcher
-from .executor import Executor, _create_executor
+from .executor import BaseExecutor, ProxyExecutor, _create_executor
 
 
-class Context(object):
+class Context(ProxyExecutor):
     """Kitipy context is the global object carrying the kitipy Executor used to
     ubiquitously run commands on local and remote targets, as well as the stack
     and stage objects loaded by task groups and the dispatcher used to update
@@ -34,7 +34,7 @@ class Context(object):
 
     def __init__(self,
                  config: Dict,
-                 executor: Executor,
+                 executor: BaseExecutor,
                  dispatcher: Dispatcher,
                  stage: Optional[Dict[Any, Any]] = None,
                  stack=None):
@@ -66,11 +66,15 @@ class Context(object):
                 automatically by creating a stack-scoped task group through
                 kitipy.task() or kctx.task() decorators.
         """
+        super().__init__(executor)
         self.config = config
         self.stage = stage
         self.stack = stack
-        self.executor = executor
         self.dispatcher = dispatcher
+
+    @property
+    def executor(self):
+        return self._executor
 
     def with_stage(self, stage_name: str):
         """Change the current Context stage.
@@ -82,8 +86,8 @@ class Context(object):
             KeyError: If the stage couldn't be found in the Context config.
         """
         self.stage = self.config['stages'][stage_name]
-        self.executor = _create_executor(self.config, stage_name,
-                                         self.dispatcher)
+        self._executor = _create_executor(self.config, stage_name,
+                                          self.dispatcher)
 
     def with_stack(self, stack_name: str):
         # This has to be imported here to avoid circular dependencies
@@ -92,87 +96,6 @@ class Context(object):
         self.stack = load_stack(self, stack_name)
         stack_cfg = self.config['stacks'][stack_name]
         self.executor.cd(stack_cfg.get('basedir', './'))
-
-    def run(self, cmd: str, **kwargs) -> subprocess.CompletedProcess:
-        """This method is the way to ubiquitously run a command on either local
-        or remote target, depending on how the executor was set.
-
-        Args:
-            cmd (str): The command to run.
-            **kwargs: See Executor.run() options for more details.
-
-        Raises:
-            paramiko.SSHException:
-                When the SSH client fail to run the command. Note that this
-                won't be raised when the command could not be found or it
-                exits with code > 0 though, but only when something fails at
-                the SSH client/server lower level.
-        
-        Returns:
-            subprocess.CompletedProcess
-        """
-        return self.executor.run(cmd, **kwargs)
-
-    def local(self, cmd: str, **kwargs) -> subprocess.CompletedProcess:
-        """Run a command on local host.
-        
-        This method is particularly useful when you want to run some commands
-        on local host whereas the Executor is running in remote mode. For
-        instance, you might want to check if a given git tag or some Docker 
-        images exists on a remote repository/registry before deploying it, 
-        or you might want to fetch the local git author name to log deployment
-        events somewhere. Such checks are generally better run locally.
-
-        Args:
-            cmd (str): The command to run.
-            **kwargs: See Executor.run() options for more details.
-
-        Raises:
-            paramiko.SSHException:
-                When the SSH client fail to run the command. Note that this
-                won't be raised when the command could not be found or it
-                exits with code > 0 though, but only when something fails at
-                the SSH client/server lower level.
-        
-        Returns:
-            subprocess.CompletedProcess
-        """
-        return self.executor.local(cmd, **kwargs)
-
-    def cd(self, path: str):
-        self.executor.cd(path)
-
-    def path_exists(self, path: str) -> bool:
-        return self.executor.path_exists(path)
-
-    def copy(self, src: str, dest: str):
-        """Copy a local file to a given path. If the underlying executor has
-        been configured to work in remote mode, the given source path will
-        be copied over network."""
-        self.executor.copy(src, dest)
-
-    def get_stage_names(self):
-        """Get the name of all stages in the configuration"""
-        return self.config['stages'].keys()
-
-    def get_stack_names(self):
-        """Get the name of all stacks in the configuration"""
-        return self.config['stacks'].keys()
-
-    @property
-    def is_local(self):
-        """Check if current kitipy Executor is in local mode"""
-        return self.executor.is_local
-
-    @property
-    def is_remote(self):
-        """Check if current kitipy Executor is in remote mode"""
-        return self.executor.is_remote
-
-    @property
-    def meta(self):
-        """Meta properties from current click.Context"""
-        return click.get_current_context().meta
 
     def invoke(self, cmd: click.Command, *args, **kwargs):
         """Call invoke() method on current click.Context"""
@@ -255,7 +178,7 @@ def get_current_context(click_ctx: Optional[click.Context] = None) -> Context:
     return kctx
 
 
-def get_current_executor() -> Executor:
+def get_current_executor() -> BaseExecutor:
     """
     Get the executor from the current kitipy context or raise an error.
 
@@ -263,7 +186,7 @@ def get_current_executor() -> Executor:
         RuntimeError: When no kitipy context has been found.
     
     Returns:
-        Executor: The executor of the current kitipy context.
+        BaseExecutor: The executor of the current kitipy context.
     """
 
     kctx = get_current_context()
