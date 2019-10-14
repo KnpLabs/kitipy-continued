@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from . import filters
 from .context import Context, pass_context, get_current_context, get_current_executor
 from .dispatcher import Dispatcher
+from .exceptions import TaskError
 from .executor import Executor, _create_executor
 from .utils import load_config_file, normalize_config, set_up_file_transfer_listeners
 
@@ -80,7 +81,7 @@ class Task(click.Command):
             click.ClickException: When this task is filtered out.
         """
         if not self.is_enabled(click_ctx):
-            click_ctx.fail('Task "%s" is filtered out.' % self.name)
+            raise TaskError('Task "%s" is filtered out.' % self.name)
 
         if self.cwd is not None:
             exec = get_current_executor()
@@ -330,7 +331,7 @@ class Group(click.Group):
             click.ClickException: When this group is filtered out.
         """
         if not self.is_enabled(click_ctx):
-            click_ctx.fail('Task "%s" is filtered out.' % self.name)
+            raise TaskError('Task "%s" is filtered out.' % self.name)
 
         if self.cwd is not None:
             exec = get_current_executor()
@@ -343,7 +344,8 @@ class Group(click.Group):
         # values dynamically set by the parent callback.
         def _process_result(value):
             if self.result_callback is not None:
-                value = ctx.invoke(self.result_callback, value, **ctx.params)
+                value = click_ctx.invoke(self.result_callback, value,
+                                         **click_ctx.params)
             return value
 
         if not click_ctx.protected_args:
@@ -588,7 +590,7 @@ class StackGroup(Group):
         self._resolved = stacks  # type: ignore
         return self._resolved
 
-    def stack(self, name):
+    def stack(self, name, **attrs):
         def decorator(f):
             attrs.setdefault('cls', Group)
             group = click.group(**attrs)(f)
@@ -821,23 +823,6 @@ class RootCommand(Group):
             super().invoke(click_ctx)
         except subprocess.CalledProcessError as e:
             raise TaskError(str(e), self.click_ctx, e.returncode)
-
-
-class TaskError(click.ClickException):
-    def __init__(self,
-                 message: str,
-                 click_ctx: Optional[click.Context] = None,
-                 exit_code: int = 1):
-        super().__init__(message)
-        self.exit_code = exit_code
-        self.click_ctx = click_ctx
-
-    def show(self, file=None):
-        color = self.click_ctx.color if self.click_ctx else None
-        msg = click.style('Error: %s' % self.format_message(),
-                          fg='bright_white',
-                          bg='red')
-        click.echo(msg, file=file, color=color)
 
 
 def root(config: Optional[Dict] = None,

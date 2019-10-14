@@ -5,6 +5,7 @@ import time
 import yaml
 import subprocess
 from typing import Callable, Dict, Optional, TypeVar
+from .exceptions import TaskError
 
 
 def load_config_file(path: str) -> Dict:
