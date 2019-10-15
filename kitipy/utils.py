@@ -5,7 +5,7 @@ import time
 import yaml
 import subprocess
 import sys
-from typing import Callable, Dict, Optional, TypeVar
+from typing import Callable, Dict, List, Optional, TypeVar
 from .exceptions import TaskError
 
 
@@ -276,3 +276,10 @@ def confirm_and_apply(
             sys.exit(exit_code)
 
     apply()
+
+
+def invoke_tree(root: click.Group, subcommands: List[str]):
+    click_ctx = click.get_current_context()
+    click_ctx.args = subcommands[1:]
+    click_ctx.protected_args = subcommands[:1]
+    root.invoke(click_ctx)
