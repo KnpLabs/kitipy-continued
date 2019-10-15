@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 from .dispatcher import Dispatcher
 
@@ -69,8 +70,6 @@ class BaseExecutor(ABC):
                 dir: Optional[str] = None) -> str:
         pass
 
-    # @TODO: Use some stack-based system  (with a monotonic number?) to help to
-    # easily go back to previous paths.
     @abstractmethod
     def cd(self, path: str):
         pass
@@ -623,10 +622,19 @@ class Executor(BaseExecutor):
         res = self._remote("mktemp -d %s" % (filename_tpl))
         return res.stdout
 
+    @contextmanager
     def cd(self, path: str):
         if not os.path.isabs(path):
+            # @TODO: the original basedir set in the constructor should be resolved
+            # into absolute path in some way or another
             path = os.path.join(self._basedir, path)
-        self._basedir = path
+
+        previous_basedir = self._basedir
+        try:
+            self._basedir = path
+            yield None
+        finally:
+            self._basedir = previous_basedir
 
     def path_exists(self, path: str) -> bool:
         """Check if the given path exists. In local mode, it uses
@@ -766,7 +774,7 @@ class ProxyExecutor(BaseExecutor):
         return self._executor.mkdtemp(suffix, prefix, dir)
 
     def cd(self, path: str):
-        self._executor.cd(path)
+        return self._executor.cd(path)
 
     def path_exists(self, path: str) -> bool:
         return self._executor.path_exists(path)

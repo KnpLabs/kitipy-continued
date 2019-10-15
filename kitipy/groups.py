@@ -1,10 +1,11 @@
 import click
+import contextlib
 import functools
 import os
 import subprocess
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from . import filters
-from .context import Context, pass_context, get_current_context, get_current_executor
+from .context import Context, pass_context, get_current_context
 from .dispatcher import Dispatcher
 from .exceptions import TaskError
 from .executor import Executor, _create_executor
@@ -83,11 +84,13 @@ class Task(click.Command):
         if not self.is_enabled(click_ctx):
             raise TaskError('Task "%s" is filtered out.' % self.name)
 
-        if self.cwd is not None:
+        cm = contextlib.nullcontext()
+        if self.cwd:
             kctx = get_current_context(click_ctx)
-            kctx.cd(self.cwd)
+            cm = kctx.cd(self.cwd)
 
-        return super().invoke(click_ctx)
+        with cm:
+            return super().invoke(click_ctx)
 
 
 class Group(click.Group):
@@ -99,6 +102,8 @@ class Group(click.Group):
                  name=None,
                  commands=None,
                  tasks: Optional[List[Task]] = None,
+                 stage: Optional[str] = None,
+                 stack: Optional[str] = None,
                  filters: Optional[List[Callable[[click.Context], bool]]] = None,
                  cwd: Optional[str] = None,
                  invoke_on_help: bool = False,
@@ -127,6 +132,8 @@ class Group(click.Group):
         """
         super().__init__(name, commands, **attrs)
         self.tasks = tasks if tasks else []
+        self.stage = stage
+        self.stack = stack
         self.filters = filters if filters else []
         self.cwd = cwd
         self.invoke_on_help = invoke_on_help
@@ -301,7 +308,23 @@ class Group(click.Group):
         if self.invoke_on_help:
             self.invoke_without_command = True
             self.invoke(click_ctx)
-        return super().get_help(click_ctx)
+        
+        kctx = get_current_context(click_ctx)
+
+        basedir_cm = contextlib.nullcontext()
+        if self.cwd is not None:
+            basedir_cm = kctx.cd(self.cwd)
+
+        stage_cm = contextlib.nullcontext()
+        if self.stage is not None:
+            stage_cm = kctx.using_stage(self.stage)
+
+        stack_cm = contextlib.nullcontext()
+        if self.stack is not None:
+            stack_cm = kctx.using_stack(self.stack)
+        
+        with basedir_cm, stage_cm, stack_cm:
+            return super().get_help(click_ctx)
 
     def format_commands(self, click_ctx: click.Context, formatter):
         """Format Commands section for the help message."""
@@ -355,38 +378,55 @@ class Group(click.Group):
         if not self.is_enabled(click_ctx):
             raise TaskError('Task "%s" is filtered out.' % self.name)
 
-        if self.cwd is not None:
-            kctx = get_current_context(click_ctx)
-            kctx.cd(self.cwd)
+        kctx = get_current_context(click_ctx)
 
-        # The code below is directly copied from click.Group.invoke().
-        # The two major differences are: chain mode has been removed and more
-        # importantly, the callback of the current group is called before
-        # resolving the subcommand. In this way, the subcommand filter can use
-        # values dynamically set by the parent callback.
+        basedir_cm = contextlib.nullcontext()
+        if self.cwd is not None:
+            basedir_cm = kctx.cd(self.cwd)
+
+        stage_cm = contextlib.nullcontext()
+        if self.stage is not None:
+            stage_cm = kctx.using_stage(self.stage)
+
+        stack_cm = contextlib.nullcontext()
+        if self.stack is not None:
+            stack_cm = kctx.using_stack(self.stack)
+
+        # The code below is directly copied from click.MultiCommand.invoke().
+        # There're however 3 major changes:
+        #   * Chain mode has been removed
+        #   * The callback of the current group is called before resolving the
+        #     subcommand. As such click_ctx.invoked_subcommand is not set,
+        #     unlike parent implementation). In this way, the subcommand filter
+        #     can use values dynamically set by the parent callback.
+        #   * Wrap the callback execution with a context manager returned by cd
+        #     (or a null one) to easily restore the Executor state.
         def _process_result(value):
             if self.result_callback is not None:
                 value = click_ctx.invoke(self.result_callback, value,
                                          **click_ctx.params)
             return value
 
-        if not click_ctx.protected_args:
-            if self.invoke_without_command:
-                return click.Command.invoke(self, click_ctx)
-            click_ctx.fail('Missing command.')
+        # Ensure that the cwd set on this group is rewinded once the children
+        # commands got executed.
+        with basedir_cm, stage_cm, stack_cm:
+            if not click_ctx.protected_args:
+                if self.invoke_without_command:
+                    return click.Command.invoke(self, click_ctx)
+                click_ctx.fail('Missing command.')
 
-        # Fetch args back out
-        args = click_ctx.protected_args + click_ctx.args
-        click_ctx.args = []
-        click_ctx.protected_args = []
-        # Make sure the context is entered so we do not clean up
-        # resources until the result processor has worked.
-        with click_ctx:  # type: ignore
-            click.Command.invoke(self, click_ctx)
-            cmd_name, cmd, args = self.resolve_command(click_ctx, args)
-            sub_ctx = cmd.make_context(cmd_name, args, parent=click_ctx)
-            with sub_ctx:  # type: ignore
-                return _process_result(sub_ctx.command.invoke(sub_ctx))
+            # Fetch args back out
+            args = click_ctx.protected_args + click_ctx.args
+            click_ctx.args = []
+            click_ctx.protected_args = []
+            # Make sure the context is entered so we do not clean up
+            # resources until the result processor has worked.
+            with click_ctx:  # type: ignore
+                click.Command.invoke(self, click_ctx)
+                cmd_name, cmd, args = self.resolve_command(click_ctx, args)
+                sub_ctx = cmd.make_context(cmd_name, args, parent=click_ctx)
+                with sub_ctx:  # type: ignore
+                    return _process_result(sub_ctx.command.invoke(sub_ctx))
 
     def task(self, *args, **kwargs):
         """This decorator creates a new kitipy task and adds it to the current
@@ -437,6 +477,7 @@ class Group(click.Group):
             **attrs: Any options accepted by StageGroup constructor.
         """
         def decorator(f):
+            # @TODO: add config
             attrs.setdefault('cls', StageGroup)
             group = click.group(**attrs)(lambda _: ())
             self.add_transparent_group(group)
@@ -479,10 +520,12 @@ class StageGroup(Group):
         return self._stages[name]
 
     def _create_stage(self, stage_name: str, callback=None) -> Group:
-        callback = callback if callback else lambda _: ()
-        callback = _new_stage_callback(stage_name, callback)
+        if callback is None:
+            callback = lambda _: ()
+
         callback = _prepend_kctx_wrapper(callback)
-        return group(stage_name, cls=Group)(callback)
+        attrs = {'cls': Group, 'stage': stage_name}
+        return group(stage_name, **attrs)(callback)
 
     def add_command(self, cmd, name=None):
         if len(self._resolved) > 0:
@@ -525,6 +568,7 @@ class StageGroup(Group):
     def stage(self, name, **attrs):
         def decorator(f):
             attrs.setdefault('cls', Group)
+            attrs['stage'] = name
             group = click.group(**attrs)(f)
             self._stages[name] = group
             return group
@@ -572,9 +616,10 @@ class StackGroup(Group):
     def _create_stack(self, stack_name: str, callback=None) -> Group:
         if callback is None:
             callback = lambda _: ()
-        callback = _new_stack_callback(stack_name, callback)
+
         callback = _prepend_kctx_wrapper(callback)
-        return group(stack_name, cls=Group)(callback)
+        attrs = {'cls': Group, 'stack': stack_name}
+        return group(stack_name, **attrs)(callback)
 
     def add_command(self, cmd, name=None):
         if len(self._resolved) > 0:
@@ -617,9 +662,10 @@ class StackGroup(Group):
     def stack(self, name, **attrs):
         def decorator(f):
             attrs.setdefault('cls', Group)
-            group = click.group(**attrs)(f)
-            self._stacks[name] = group
-            return group
+            attrs['stack'] = name
+            cmd = group(**attrs)(f)
+            self._stacks[name] = cmd
+            return cmd
 
         return decorator
 
@@ -728,24 +774,6 @@ def _prepend_kctx_wrapper(f):
     return wrapper
 
 
-def _new_stage_callback(stage_name: str, f):
-    @functools.wraps(f)
-    def _stage_callback(kctx: Context, *args, **kwargs):
-        kctx.with_stage(stage_name)
-        return f(kctx, *args, **kwargs)
-
-    return _stage_callback
-
-
-def _new_stack_callback(stack_name: str, f):
-    @functools.wraps(f)
-    def _stack_callback(kctx: Context, *args, **kwargs):
-        kctx.with_stack(stack_name)
-        return f(kctx, *args, **kwargs)
-
-    return _stack_callback
-
-
 class RootCommand(Group):
     """The RootCommand is used to mark the root of kitipy task tree. It's
     mostly a kitipy task group but without filter support. It's a central
@@ -786,33 +814,23 @@ class RootCommand(Group):
         kwargs['filters'] = []
         super().__init__(**kwargs)
 
-        config = normalize_config(config)
-        dispatcher = set_up_file_transfer_listeners(Dispatcher())
+        self._config = normalize_config(config)
+        self._dispatcher = set_up_file_transfer_listeners(Dispatcher())
+        self.click_ctx = None
 
         stages = config['stages'].values()
         if len(stages) == 1:
             stage = list(stages)[0]
+            self.stage = stage['name']
         if len(stages) > 1:
             stage = next((stage for stage in stages if stage.get('default')),
                          None)
-            if stage is None:
-                raise RuntimeError(
-                    'Mutiple stages are defined but none is marked as default.'
-                )
-        if len(stages) == 0:
-            raise RuntimeError(
-                'You have to provide a config with at least one stage.')
-
-        executor = _create_executor(config, stage['name'], dispatcher)
-        self.kctx = Context(config, executor, dispatcher)
-        self.kctx.stage = stage
-        self.click_ctx = None
+            self.stage = stage['name']
 
         stacks = config['stacks'].values()
         if len(stacks) == 1:
-            from .docker.stack import load_stack
             stack_cfg = list(stacks)[0]
-            self.kctx.stack = load_stack(self.kctx, stack_cfg['name'])
+            self.stack = stack_cfg['name']
 
     def make_context(self, info_name, args, parent=None, **extra):
         """Create a click.Context and parse remaining CLI args.
@@ -835,7 +853,8 @@ class RootCommand(Group):
                                        info_name=info_name,
                                        parent=parent,
                                        **extra)
-        self.click_ctx.obj = self.kctx
+        executor = Executor(os.getcwd(), self._dispatcher)
+        self.click_ctx.obj = Context(self._config, executor, self._dispatcher)
 
         with self.click_ctx.scope(cleanup=False):
             self.parse_args(self.click_ctx, args)
@@ -845,8 +864,12 @@ class RootCommand(Group):
     def invoke(self, click_ctx: click.Context):
         try:
             super().invoke(click_ctx)
-        except subprocess.CalledProcessError as e:
-            raise TaskError(str(e), self.click_ctx, e.returncode)
+        except TaskError as err:
+            if err.click_ctx is None:
+                err.click_ctx = self.click_ctx
+            raise err
+        except subprocess.CalledProcessError as err:
+            raise TaskError(str(err), self.click_ctx, err.returncode)
 
 
 def root(config: Optional[Dict] = None,
