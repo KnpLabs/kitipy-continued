@@ -109,11 +109,11 @@ class Context(ProxyExecutor):
                 self._stage = previous
 
     @contextmanager
-    def using_stack(self, stack_name):
+    def using_stack(self, stack_name, filename_params: Dict[str, str] = {}):
         from .docker.stack import load_stack
 
         previous = self._stack
-        stack = load_stack(self, stack_name)
+        stack = load_stack(self, stack_name, filename_params)
         stack_cfg = self.config['stacks'][stack_name]
         basedir = stack_cfg.get('basedir')
 

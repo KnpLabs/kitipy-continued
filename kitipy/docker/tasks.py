@@ -37,7 +37,7 @@ def push(kctx: kitipy.Context, tag: str = 'dev', services: List[str] = []):
 @click.argument('services', nargs=-1, type=str)
 @click.option('--tag', type=str, default='dev')
 def up(kctx: kitipy.Context, tag: str = 'dev', services: List[str] = []):
-    kctx.stack.up(services, detach=True)
+    kctx.stack.up(services, detach=True, no_build=True, remove_orphans=True)
 
 
 @docker_tasks.task()
