@@ -71,6 +71,10 @@ class BaseStack(ABC):
         pass
 
     @abstractmethod
+    def count_running_services(self) -> int:
+        pass
+
+    @abstractmethod
     def logs(self, services: List[str] = [],
              **kwargs) -> subprocess.CompletedProcess:
         pass
@@ -226,6 +230,9 @@ class ComposeStack(BaseStack):
     def count_services(self, filter: Optional[Dict[str, str]] = None) -> int:
         res = self.ps(filter=filter, _pipe=True, _check=False)
         return len(res.stdout.splitlines())
+
+    def count_running_services(self) -> int:
+        return self.count_sevices(filter=('status=running'))
 
     def logs(self,
              services: List[str] = [],
@@ -440,6 +447,9 @@ class SwarmStack(BaseStack):
         services = self.ps(filter=filter, _pipe=True, _check=False)
         # @TODO: improve it (this is actually buggy)
         return len(services.stdout.splitlines())
+
+    def count_running_services(self) -> int:
+        return self.count_sevices(filter=('status=running'))
 
     def logs(self,
              services: List[str] = [],
