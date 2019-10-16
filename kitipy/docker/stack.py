@@ -252,8 +252,7 @@ class ComposeStack(BaseStack):
             _pipe: bool = False,
             _check: bool = True,
             **kwargs) -> subprocess.CompletedProcess:
-        if len(kwargs) == 0:
-            kwargs = {"rm": True}
+        kwargs.setdefault('rm', True)
         run = append_cmd_flags('docker-compose run', **kwargs)
         return self._run('%s %s %s' % (run, service, cmd),
                          pipe=_pipe,
@@ -470,8 +469,7 @@ class SwarmStack(BaseStack):
             _pipe: bool = False,
             _check: bool = True,
             **kwargs) -> subprocess.CompletedProcess:
-        if len(kwargs) == 0:
-            kwargs = {"rm": True}
+        kwargs.setdefault('rm', True)
         run = append_cmd_flags('docker-compose run', **kwargs)
         return self._run('%s %s %s' % (run, service, cmd),
                          pipe=_pipe,
