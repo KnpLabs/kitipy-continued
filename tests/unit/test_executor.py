@@ -6,7 +6,7 @@ import pytest
 import shutil
 import socket
 import tempfile
-from kitipy.executor import InteractiveWarningPolicy
+from kitipy import InteractiveWarningPolicy
 from unittest import mock
 
 

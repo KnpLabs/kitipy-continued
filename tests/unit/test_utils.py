@@ -1,7 +1,8 @@
+import kitipy
+import os
 import pytest
 from unittest.mock import Mock
-from kitipy.utils import *
-import kitipy.dispatcher
+from kitipy import *
 
 
 def append_cmd_flags_testdata():
