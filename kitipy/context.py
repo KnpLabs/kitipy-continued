@@ -31,6 +31,7 @@ class Context(object):
     handled by RootCommand which can be created through the kitipy.root()
     decorator.
     """
+
     def __init__(self,
                  config: Dict,
                  executor: Executor,
@@ -173,9 +174,25 @@ class Context(object):
         """Meta properties from current click.Context"""
         return click.get_current_context().meta
 
-    def invoke(self, *args, **kwargs):
+    def invoke(self, cmd: click.Command, *args, **kwargs):
         """Call invoke() method on current click.Context"""
-        return click.get_current_context().invoke(*args, **kwargs)
+        parent = click.get_current_context()
+        ctx = click.Context(cmd, info_name=cmd.name, parent=parent)
+
+        for param in cmd.params:
+            if not param.expose_value or param.name in kwargs:
+                continue
+
+            default = param.get_default(ctx)
+            if param.name in parent.params:
+                default = parent.params[param.name]
+
+            kwargs[param.name] = default
+
+        callback = cmd.callback
+        with click.core.augment_usage_errors(parent):
+            with ctx:  # type: ignore
+                return callback(*args, **kwargs)  # type: ignore
 
     def echo(self, *args, **kwargs):
         """Call echo() method on current click.Context"""
