@@ -101,6 +101,7 @@ class Group(click.Group):
                  filters: List[Callable[[click.Context], bool]] = [],
                  cwd: Optional[str] = None,
                  invoke_on_help: bool = False,
+                 transparents: List[click.MultiCommand] = [],
                  **attrs):
         """
         Args:
@@ -129,6 +130,9 @@ class Group(click.Group):
         self.filters = filters
         self.cwd = cwd
         self.invoke_on_help = invoke_on_help
+
+        for group in transparents:
+            self.add_transparent_group(group)
 
     @property
     def transparent_groups(self) -> List[click.MultiCommand]:
