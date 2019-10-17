@@ -5,6 +5,7 @@ import pytest
 import tempfile
 import shutil
 import subprocess
+from kitipy import git_actions
 from unittest import mock
 
 
@@ -32,16 +33,16 @@ def executor(dispatcher: kitipy.Dispatcher) -> kitipy.Executor:
 def test_ensure_tag_exists(executor, dispatcher):
     kctx = kitipy.Context({}, executor, dispatcher)
 
-    kitipy.git.ensure_tag_exists(kctx, "v0.5")
+    git_actions.ensure_tag_exists(kctx, "v0.5")
 
     with pytest.raises(click.ClickException):
-        kitipy.git.ensure_tag_exists(kctx, "v2.0")
+        git_actions.ensure_tag_exists(kctx, "v2.0")
 
 
 def test_ensure_tag_is_recent(executor, dispatcher):
     kctx = kitipy.Context({}, executor, dispatcher)
 
-    kitipy.git.ensure_tag_is_recent(kctx, "v0.4")
+    git_actions.ensure_tag_is_recent(kctx, "v0.4")
 
     with pytest.raises(click.ClickException):
-        kitipy.git.ensure_tag_is_recent(kctx, "v0.1", last=2)
+        git_actions.ensure_tag_is_recent(kctx, "v0.1", last=2)

@@ -1,0 +1,45 @@
+---
+version: 2
+
+jobs:
+  build:
+    machine:
+      image: ubuntu-1604:201903-01
+    working_directory: ~/kitipy
+    environment:
+      PIPENV_VENV_IN_PROJECT: true
+    steps:
+      - checkout
+      - run:
+          name: Prepare cached paths to be restored
+          command: |
+            sudo chown -R circleci:circleci /usr/local/bin
+            sudo chown -R circleci:circleci /usr/local/lib/python2.7/site-packages
+      - restore_cache:
+          key: deps9-{{ .Branch }}-{{ checksum "Pipfile" }}
+      - run:
+          name: Install dependencies
+          command: |
+            # Doesn't work with --user flag
+            sudo -H pip install pipenv
+            pipenv install --dev
+      - save_cache:
+          key: deps9-{{ .Branch }}-{{ checksum "Pipfile" }}
+          paths:
+            - .venv
+            - /usr/local/lib/python2.7/site-packages
+            - /usr/local/bin/pipenv
+      - run:
+          name: Fix authorized_keys permissions
+          command: sudo chmod 0600 tests/.ssh/authorized_keys
+      # - run:
+      #     name: Check code style
+      #     command: pipenv run ./tasks.py format
+      # - run:
+      #     name: Lint the code
+      #     command: pipenv run ./tasks.py lint
+      - run:
+          name: Run tests
+          command: pipenv run ./tasks.py test all
+      - store_test_results:
+          path: .test-results/
