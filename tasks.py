@@ -16,8 +16,12 @@ config = {
 }
 
 
-def local_with_venv(kctx: kitipy.Context, cmd: str, **kwargs):
-    return kctx.local('. .venv/bin/activate; ' + cmd, **kwargs)
+def pytest(kctx: kitipy.Context, cmd: str, **args):
+    env = os.environ.copy()
+    env['PYTHONPATH'] = os.getcwd()
+    args.setdefault('env', env)
+
+    kctx.local('pytest ' + cmd, **args)
 
 
 @kitipy.root(config_file=None, config=config)
@@ -34,24 +38,23 @@ def format(kctx: kitipy.Context, show_diff, force):
     apply = show_diff is False
 
     if show_diff:
-        diff = local_with_venv(kctx,
-                               'yapf --diff -r kitipy/ tests/ tasks*.py',
-                               check=False)
+        diff = kctx.local('yapf --diff -r kitipy/ tests/ tasks*.py',
+                          check=False)
         confirm_message = 'Do you want to apply this diff?'
         apply = diff.returncode != 0
 
     if force is None and apply:
         force = click.confirm(confirm_message, default=True)
     if force and apply:
-        local_with_venv(kctx, 'yapf -vv -p -i -r kitipy/ tests/ tasks*.py')
+        kctx.local('yapf -vv -p -i -r kitipy/ tests/ tasks*.py')
 
 
 @root.task()
 def lint(kctx: kitipy.Context):
     """Run mypy, a static type checker, to detect type errors."""
-    local_with_venv(kctx, 'mypy -p kitipy')
+    kctx.local('mypy -p kitipy')
     # @TODO: find a way to fix types errors in tasks files
-    # local_with_venv(kctx, 'mypy tasks*.py')
+    # kctx.local('mypy tasks*.py')
 
 
 @root.group()
@@ -98,18 +101,18 @@ def test_unit(kctx: kitipy.Context):
         'ssh -F tests/.ssh/config testhost-via-jumphost /bin/true 1>/dev/null 2>&1'
     )
 
-    local_with_venv(kctx, 'pytest tests/unit/ -vv')
+    pytest(kctx, 'tests/unit/ -vv')
 
 
 @test.task(name='tasks')
 @click.argument('suites', nargs=-1, type=str)
 def test_tasks(kctx: kitipy.Context, suites: List[str]):
     if len(suites) == 0:
-        local_with_venv(kctx, 'pytest tests/tasks/ -vv')
+        pytest(kctx, 'tests/tasks/ -vv')
         return
 
     for suite in suites:
-        local_with_venv(kctx, 'pytest tests/tasks/test_%s.py -vv' % (suite))
+        pytest(kctx, 'tests/tasks/test_%s.py -vv' % (suite))
 
 
 @test.task(name='generate-git-tgz')

@@ -3,7 +3,7 @@ import kitipy
 import pytest
 import subprocess
 from unittest import mock
-from kitipy.context import *
+from kitipy import *
 
 
 def test_get_current_context():

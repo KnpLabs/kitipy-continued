@@ -2,19 +2,13 @@ import click
 import functools
 import os
 import subprocess
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from . import filters
 from .context import Context, pass_context, get_current_context, get_current_executor
 from .dispatcher import Dispatcher
+from .exceptions import TaskError
 from .executor import Executor, _create_executor
 from .utils import load_config_file, normalize_config, set_up_file_transfer_listeners
-
-
-def _fake_click_ctx() -> click.Context:
-    """This internal function is used to create a fake click Context. It's 
-    used by Group.merge() to list Tasks from source Groups.
-    """
-    return click.Context.__new__(click.Context)
 
 
 class Task(click.Command):
@@ -77,7 +71,7 @@ class Task(click.Command):
         for filter in self.filters:
             if not filter(click_ctx):
                 return False
-        return True
+        return self.hidden != True
 
     def invoke(self, click_ctx: click.Context):
         """Given a context, this invokes the attached callback (if it exists)
@@ -87,7 +81,7 @@ class Task(click.Command):
             click.ClickException: When this task is filtered out.
         """
         if not self.is_enabled(click_ctx):
-            click_ctx.fail('Task "%s" is filtered out.' % self.name)
+            raise TaskError('Task "%s" is filtered out.' % self.name)
 
         if self.cwd is not None:
             exec = get_current_executor()
@@ -95,35 +89,8 @@ class Task(click.Command):
 
         return super().invoke(click_ctx)
 
-    def get_help_option(self, click_ctx: click.Context):
-        """This is a click.Command method overriden to implement task
-        filtering.
-        """
-        help_options = self.get_help_option_names(click_ctx)
-        if not help_options or not self.add_help_option:
-            return
 
-        def show_help(click_ctx, param, value):
-            """Returns the help option object when the task is not
-            filtered out, or raise an Error.
-            """
-            if not self.is_enabled(click_ctx):
-                click_ctx.fail('Task "%s" not found.' % self.name)
-
-            if value and not click_ctx.resilient_parsing:
-                click.echo(click_ctx.get_help(), color=click_ctx.color)
-                click_ctx.exit()
-
-        return click.Option(  # type: ignore
-            help_options,
-            is_flag=True,
-            is_eager=True,
-            expose_value=False,
-            callback=show_help,
-            help='Show this message and exit.')
-
-
-class Group(click.Group, Task):
+class Group(click.Group):
     """Group is like regular click.Group but it implements some ktipy-specific
     features like: support for stage/stack-scoped task groups and task
     filtering.
@@ -134,6 +101,7 @@ class Group(click.Group, Task):
                  filters: List[Callable[[click.Context], bool]] = [],
                  cwd: Optional[str] = None,
                  invoke_on_help: bool = False,
+                 transparents: List[click.MultiCommand] = [],
                  **attrs):
         """
         Args:
@@ -157,11 +125,39 @@ class Group(click.Group, Task):
                 Any other constructor parameters accepted by click.Group.
         """
         super().__init__(name, commands, **attrs)
-        self._stage_group = None
-        self._stack_group = None
+        self._transparents = {}  # type: Dict[str, click.MultiCommand]
+        self._resolved = {}  # type: Dict[str, click.Command]
         self.filters = filters
         self.cwd = cwd
         self.invoke_on_help = invoke_on_help
+
+        for group in transparents:
+            self.add_transparent_group(group)
+
+    @property
+    def transparent_groups(self) -> List[click.MultiCommand]:
+        return list(self._transparents.values())
+
+    def add_command(self, cmd, name=None):
+        if len(self._resolved) > 0:
+            raise RuntimeError(
+                "This task group structure has already been resolved, you can't merge or add new tasks or commands at this point."
+            )
+
+        super().add_command(cmd, name)
+
+    def add_transparent_group(self, group: click.MultiCommand):
+        if len(self._resolved) > 0:
+            raise RuntimeError(
+                "This task group structure has already been resolved, you can't add new transparent groups at this point."
+            )
+
+        if group.name in self._transparents:
+            raise KeyError(
+                "There's already a transparent group named %s attached to %s."
+                % (group.name, self.name))
+
+        self._transparents[group.name] = group
 
     def merge(self, *args: click.Group):
         """This method can be used to merge click.Group(s), including kitipy
@@ -173,11 +169,92 @@ class Group(click.Group, Task):
                 One or many source click.Groups you want to merge in the
                 current Group.
         """
-        click_ctx = _fake_click_ctx()
         for src in args:
-            for cmdname in src.list_commands(click_ctx):
-                cmd = src.get_command(click_ctx, cmdname)
-                self.add_command(cmd)  # type: ignore
+            for cmd in src.commands.values():
+                self.add_command(cmd)
+
+            if isinstance(src, Group):
+                for group in src.transparent_groups:
+                    self.add_transparent_group(group)
+
+    def is_enabled(self, click_ctx: click.Context) -> bool:
+        """Check if the that Task should be filtered out based on click Context.
+        Most generally, you shouldn't have to worry about this method, it's 
+        automatically called by kitipy Group.
+
+        Args:
+            click_ctx (click.Context):
+                The click Context passed to the underlying filter.
+        
+        Returns:
+            bool: Either this task should be filtered in (True) or
+            filtered out (False).
+        """
+        for filter in self.filters:
+            if not filter(click_ctx):
+                return False
+        return self.hidden != True
+
+    def _resolve_commands(self, click_ctx: click.Context):
+        if len(self._resolved) > 0:
+            return self._resolved
+
+        commands = self._filter_command_list(click_ctx, self)
+        if len(commands) > 0:
+            names, origs, cmds = zip(*commands)
+        else:
+            names, origs, cmds = ((), (), ())
+
+        origins = dict(zip(names,
+                           origs))  # type: Dict[str, click.MultiCommand]
+        resolved = dict(zip(names, cmds))  # type: Dict[str, click.Command]
+
+        for group_name, group in self._transparents.items():
+            subcommands = self._filter_command_list(click_ctx, group)
+
+            if len(subcommands) > 0:
+                sub_names, sub_origs, sub_cmds = zip(*subcommands)
+            else:
+                sub_names, sub_origs, sub_cmds = ((), (), ())
+
+            colliding = list(set(origins.keys()) & set(sub_names))
+            if len(colliding) > 0:
+                colliding_errors = [
+                    '"%s" from "%s"' % (name, resolved[name])
+                    for name in colliding
+                ]
+                error = ', '.join(colliding_errors)
+
+                raise RuntimeError(
+                    'The transparent group "%s" adds command(s) colliding with: %s.'
+                    % (group.name, error))
+
+            resolved.update(dict(zip(sub_names, sub_cmds)))
+            origins.update(dict(zip(sub_names, sub_origs)))
+
+        self._resolved = resolved
+        return self._resolved
+
+    def _filter_command_list(
+            self, click_ctx: click.Context, group: click.MultiCommand
+    ) -> List[Tuple[str, click.MultiCommand, click.Command]]:
+        group = super() if group is self else group  # type: ignore
+        commands = group.list_commands(click_ctx)
+        filtered = [
+        ]  # type: List[Tuple[str, click.MultiCommand, click.Command]]
+
+        for cmd_name in commands:
+            cmd = group.get_command(click_ctx, cmd_name)
+            if cmd is None:
+                continue
+
+            if isinstance(cmd, Task) or isinstance(cmd, Group):
+                if cmd.is_enabled(click_ctx):
+                    filtered.append((cmd_name, group, cmd))
+            elif not cmd.hidden:
+                filtered.append((cmd_name, group, cmd))
+
+        return filtered
 
     def get_command(self, click_ctx: click.Context, cmd_name: str):
         """This is a click.Group method overriden to implement
@@ -187,22 +264,12 @@ class Group(click.Group, Task):
         method calls it to display the help message.
 
         You generally don't need to call it by yourself.
-
-        Raises:
-            KeyError: When the task is not found.
         """
-        kctx = click_ctx.find_object(Context)
+        resolved = self._resolve_commands(click_ctx)
+        if cmd_name not in resolved:
+            return None
 
-        if cmd_name in kctx.get_stage_names():
-            kctx.meta['stage'] = cmd_name
-            return self._stage_group
-        if cmd_name in kctx.get_stack_names():
-            kctx.meta['stack'] = cmd_name
-            return self._stack_group
-
-        cmd = super().get_command(kctx, cmd_name)
-
-        return cmd
+        return resolved[cmd_name]
 
     def list_commands(self, click_ctx: click.Context):
         """This is a click.Group method overriden to implement
@@ -210,39 +277,48 @@ class Group(click.Group, Task):
 
         You generally don't need to call it by yourself.
         """
-        commands = self.commands
-        root = click_ctx.find_root().command
-
-        kctx = get_current_context()
-        stage_names = kctx.get_stage_names()
-        if len(stage_names) > 0 and self._stage_group is not None:
-            stage_vals = (self._stage_group for i in range(len(stage_names)))
-            stage_tasks = dict(zip(stage_names, stage_vals))
-
-            commands = dict(commands, **stage_tasks)
-
-        stack_names = kctx.get_stack_names()
-        if len(stack_names) > 0 and self._stack_group is not None:
-            stack_vals = (self._stack_group for i in range(len(stack_names)))
-            stack_tasks = dict(zip(stack_names, stack_vals))
-
-            commands = dict(commands, **stack_tasks)
-
-        filtered = {}  # type: Dict[str, click.Command]
-        for cmd_name, cmd in commands.items():
-            if isinstance(cmd, Task) or isinstance(cmd, Group):
-                if cmd.is_enabled(click_ctx):
-                    filtered[cmd_name] = cmd
-            else:
-                filtered[cmd_name] = cmd
-
-        return sorted(filtered)
+        commands = self._resolve_commands(click_ctx).keys()
+        return sorted(commands)
 
     def get_help(self, click_ctx: click.Context):
         if self.invoke_on_help:
             self.invoke_without_command = True
             self.invoke(click_ctx)
         return super().get_help(click_ctx)
+
+    def format_commands(self, click_ctx: click.Context, formatter):
+        """Format Commands section for the help message."""
+        for group_name, group in self._transparents.items():
+            subcommands = group.list_commands(click_ctx)
+            self._print_group_help_section(click_ctx, group_name, group,
+                                           subcommands, formatter)
+
+        subcommands = super().list_commands(click_ctx)
+        self._print_group_help_section(click_ctx, 'Commands', self,
+                                       subcommands, formatter)
+
+    def _print_group_help_section(self, click_ctx: click.Context,
+                                  section_name: str, group, subcommands,
+                                  formatter):
+        # This code comes from click.MultiCommand.format_commands()
+        commands = []
+        for subcommand in subcommands:
+            cmd = group.get_command(click_ctx, subcommand)
+            if cmd is not None:
+                commands.append((subcommand, cmd))
+
+        # allow for 3 times the default spacing
+        if len(commands):
+            limit = formatter.width - 6 - max(len(cmd[0]) for cmd in commands)
+
+            rows = []
+            for subcommand, cmd in commands:
+                help = cmd.get_short_help_str(limit)
+                rows.append((subcommand, help))
+
+            if rows:
+                with formatter.section(section_name):
+                    formatter.write_dl(rows)
 
     def command(self, *args, **kwargs):
         raise DeprecationWarning(
@@ -259,13 +335,40 @@ class Group(click.Group, Task):
             click.ClickException: When this group is filtered out.
         """
         if not self.is_enabled(click_ctx):
-            click_ctx.fail('Task "%s" is filtered out.' % self.name)
+            raise TaskError('Task "%s" is filtered out.' % self.name)
 
         if self.cwd is not None:
             exec = get_current_executor()
             exec.cd(self.cwd)
 
-        return super().invoke(click_ctx)
+        # The code below is directly copied from click.Group.invoke().
+        # The two major differences are: chain mode has been removed and more
+        # importantly, the callback of the current group is called before
+        # resolving the subcommand. In this way, the subcommand filter can use
+        # values dynamically set by the parent callback.
+        def _process_result(value):
+            if self.result_callback is not None:
+                value = click_ctx.invoke(self.result_callback, value,
+                                         **click_ctx.params)
+            return value
+
+        if not click_ctx.protected_args:
+            if self.invoke_without_command:
+                return click.Command.invoke(self, click_ctx)
+            click_ctx.fail('Missing command.')
+
+        # Fetch args back out
+        args = click_ctx.protected_args + click_ctx.args
+        click_ctx.args = []
+        click_ctx.protected_args = []
+        # Make sure the context is entered so we do not clean up
+        # resources until the result processor has worked.
+        with click_ctx:  # type: ignore
+            click.Command.invoke(self, click_ctx)
+            cmd_name, cmd, args = self.resolve_command(click_ctx, args)
+            sub_ctx = cmd.make_context(cmd_name, args, parent=click_ctx)
+            with sub_ctx:  # type: ignore
+                return _process_result(sub_ctx.command.invoke(sub_ctx))
 
     def task(self, *args, **kwargs):
         """This decorator creates a new kitipy task and adds it to the current
@@ -308,41 +411,216 @@ class Group(click.Group, Task):
 
         return decorator
 
-    def stage_group(self, use_default_group=True, **attrs):
+    def stage_group(self, **attrs):
         """This decorator creates a new kitipy.Group and registers it as a
-        stage-scoped group on the current Group.
-        
-        As stage-scoped task groups are regular task groups, this
-        decorator is the only way to create a stage-scoped group.
+        transparent stage-scoped group on all the stacks in this StackGroup.
 
         Args:
-            **attrs: Any options accepted by click.group() decorator.
+            **attrs: Any options accepted by StageGroup constructor.
         """
         def decorator(f):
-            attrs.setdefault('cls', Group)
-            cmd = click.group(**attrs)(_init_stage_group_wrapper(f))
-            self._stage_group = cmd
-            return cmd
+            attrs.setdefault('cls', StageGroup)
+            group = click.group(**attrs)(lambda _: ())
+            self.add_transparent_group(group)
+            return group
 
         return decorator
 
     def stack_group(self, **attrs):
         """This decorator creates a new kitipy.Group and registers it as a
-        stack-scoped group on the current Group.
-        
-        As stack-scoped task groups are regular task groups, this
-        decorator is the only way to create a stack-scope group.
+        transparent stage-scoped group on all the stacks in this StackGroup.
 
         Args:
-            **attrs: Any options accepted by click.group() decorator.
+            **attrs: Any options accepted by StageGroup constructor.
         """
         def decorator(f):
-            attrs.setdefault('cls', Group)
-            cmd = click.group(**attrs)(_init_stack_group_wrapper(f))
-            self._stack_group = cmd
-            return cmd
+            attrs.setdefault('cls', StackGroup)
+            group = click.group(**attrs)(lambda _: ())
+            self.add_transparent_group(group)
+            return group
 
         return decorator
+
+
+class StageGroup(Group):
+    def __init__(self, name: str, **attrs):
+        attrs['filters'] = []
+        super().__init__(name, **attrs)
+        self._stages = {}  # type: Dict[str, Group]
+        self._all = self._create_stage('all')
+
+    @property
+    def all(self):
+        return self._all
+
+    def __getattr__(self, name):
+        if name not in self._stages:
+            self._stages[name] = self._create_stage(name)
+        return self._stages[name]
+
+    def _create_stage(self, stage_name: str, callback=None) -> Group:
+        callback = callback if callback else lambda _: ()
+        callback = _new_stage_callback(stage_name, callback)
+        callback = _prepend_kctx_wrapper(callback)
+        return group(stage_name, cls=Group)(callback)
+
+    def add_command(self, cmd, name=None):
+        if len(self._resolved) > 0:
+            raise RuntimeError(
+                "This task group structure has already been resolved, you can't merge or add new tasks or commands at this point."
+            )
+
+        self._all.add_command(cmd, name)
+
+    def add_transparent_group(self, group: click.MultiCommand):
+        if len(self._resolved) > 0:
+            raise RuntimeError(
+                "This task group structure has already been resolved, you can't add new transparent groups at this point."
+            )
+
+        if group.name in self._transparents:
+            raise KeyError(
+                "There's already a transparent group named %s attached to %s."
+                % (group.name, self.name))
+
+        self._all.add_transparent_group(group)
+
+    def _resolve_commands(self, click_ctx: click.Context):
+        if len(self._resolved) > 0:
+            return self._resolved
+
+        kctx = get_current_context(click_ctx)
+        stages_cfg = kctx.config.get('stages', {})
+        stages = {}
+
+        for name in stages_cfg.keys():
+            if name in self._stages:
+                stages[name] = self._stages[name]
+            else:
+                stages[name] = self._create_stage(name)
+            stages[name].merge(self._all)
+
+        self._resolved = stages  # type: ignore
+        return self._resolved
+
+    def stage(self, name, **attrs):
+        def decorator(f):
+            attrs.setdefault('cls', Group)
+            group = click.group(**attrs)(f)
+            self._stages[name] = group
+            return group
+
+        return decorator
+
+    def list_commands(self, click_ctx: click.Context):
+        return self._resolve_commands(click_ctx).keys()
+
+    def get_command(self, click_ctx: click.Context, cmd_name: str):
+        resolved = self._resolve_commands(click_ctx)
+        return resolved[cmd_name] if cmd_name in resolved else None
+
+    def format_help(self, click_ctx, formatter):
+        raise RuntimeError("StackGroups don't have any specific help message.")
+
+    def invoke(self, click_ctx):
+        raise RuntimeError(
+            "You can't directly invoke a StackGroup, you should instead invoke one of its member."
+        )
+
+    def stage_group(self, **attrs):
+        raise RuntimeError(
+            "You can't add a stage group to another stage group.")
+
+
+class StackGroup(Group):
+    def __init__(self, name, **attrs):
+        attrs['filters'] = []
+        super().__init__(name, **attrs)
+        self._stacks = {}  # type: Dict[str, Group]
+        self._all = self._create_stack('all')
+
+    @property
+    def all(self):
+        return self._all
+
+    def __getattr__(self, name):
+        if name not in self._stacks:
+            self._stacks[name] = self._create_stack(name)
+        return self._stacks[name]
+
+    def _create_stack(self, stack_name: str, callback=None) -> Group:
+        if callback is None:
+            callback = lambda _: ()
+        callback = _new_stack_callback(stack_name, callback)
+        callback = _prepend_kctx_wrapper(callback)
+        return group(stack_name, cls=Group)(callback)
+
+    def add_command(self, cmd, name=None):
+        if len(self._resolved) > 0:
+            raise RuntimeError(
+                "This task group structure has already been resolved, you can't merge or add new tasks or commands at this point."
+            )
+
+        self._all.add_command(cmd, name)
+
+    def add_transparent_group(self, group: click.MultiCommand):
+        if len(self._resolved) > 0:
+            raise RuntimeError(
+                "This task group structure has already been resolved, you can't add new transparent groups at this point."
+            )
+
+        if group.name in self._transparents:
+            raise KeyError(
+                "There's already a transparent group named %s attached to %s."
+                % (group.name, self.name))
+
+        self._all.add_transparent_group(group)
+
+    def _resolve_commands(self, click_ctx: click.Context):
+        if len(self._resolved) > 0:
+            return self._resolved
+
+        kctx = get_current_context(click_ctx)
+        stacks_cfg = kctx.config.get('stacks', {})
+        stacks = {}  # type: Dict[str, Group]
+
+        for name in stacks_cfg.keys():
+            if name in self._stacks:
+                stacks[name] = self._stacks[name]
+            else:
+                stacks[name] = self._create_stack(name)
+            stacks[name].merge(self._all)
+
+        self._resolved = stacks  # type: ignore
+        return self._resolved
+
+    def stack(self, name, **attrs):
+        def decorator(f):
+            attrs.setdefault('cls', Group)
+            group = click.group(**attrs)(f)
+            self._stacks[name] = group
+            return group
+
+        return decorator
+
+    def list_commands(self, click_ctx: click.Context):
+        return self._resolve_commands(click_ctx).keys()
+
+    def get_command(self, click_ctx: click.Context, cmd_name: str):
+        resolved = self._resolve_commands(click_ctx)
+        return resolved[cmd_name] if cmd_name in resolved else None
+
+    def format_help(self, click_ctx, formatter):
+        raise RuntimeError("StackGroups don't have any specific help message.")
+
+    def invoke(self, click_ctx):
+        raise RuntimeError(
+            "You can't directly invoke a StackGroup, you should instead invoke one of its member."
+        )
+
+    def stack_group(self, **attrs):
+        raise RuntimeError(
+            "You can't add a stack group to another stack group.")
 
 
 def task(name: Optional[str] = None,
@@ -430,41 +708,22 @@ def _prepend_kctx_wrapper(f):
     return wrapper
 
 
-# @TODO: This won't work as expected if the stage-scoped group is declared
-# inside of a stack-scoped group as the stack object has already a copy of the
-# Executor.
-def _init_stage_group_wrapper(f):
-    """This internal function creates a wrapper function run when a
-    stage-scoped group is invoked to change the command Executor set on the
-    kitipy Context.
-
-    Like _prepend_kctx_wrapper(), the wrapper injects kitipy.Context as first
-    argument.
-    """
+def _new_stage_callback(stage_name: str, f):
     @functools.wraps(f)
-    def wrapper(*args, **kwargs):
-        kctx = get_current_context()
-        kctx.with_stage(kctx.meta['stage'])
+    def _stage_callback(kctx: Context, *args, **kwargs):
+        kctx.with_stage(stage_name)
         return f(kctx, *args, **kwargs)
 
-    return wrapper
+    return _stage_callback
 
 
-def _init_stack_group_wrapper(f):
-    """This internal function creates a wrapper function run when a
-    stack-scoped group is invoked to load the requested stack and set it on 
-    current kitipy Context.
-
-    Like _prepend_kctx_wrapper(), the wrapper injects kitipy.Context as first
-    argument.
-    """
+def _new_stack_callback(stack_name: str, f):
     @functools.wraps(f)
-    def wrapper(*args, **kwargs):
-        kctx = get_current_context()
-        kctx.with_stack(kctx.meta['stack'])
+    def _stack_callback(kctx: Context, *args, **kwargs):
+        kctx.with_stack(stack_name)
         return f(kctx, *args, **kwargs)
 
-    return wrapper
+    return _stack_callback
 
 
 class RootCommand(Group):
@@ -514,7 +773,8 @@ class RootCommand(Group):
         if len(stages) == 1:
             stage = list(stages)[0]
         if len(stages) > 1:
-            stage = next((stage for stage in stages if stage['default']), None)
+            stage = next((stage for stage in stages if stage.get('default')),
+                         None)
             if stage is None:
                 raise RuntimeError(
                     'Mutiple stages are defined but none is marked as default.'
@@ -567,23 +827,6 @@ class RootCommand(Group):
             super().invoke(click_ctx)
         except subprocess.CalledProcessError as e:
             raise TaskError(str(e), self.click_ctx, e.returncode)
-
-
-class TaskError(click.ClickException):
-    def __init__(self,
-                 message: str,
-                 click_ctx: Optional[click.Context] = None,
-                 exit_code: int = 1):
-        super().__init__(message)
-        self.exit_code = exit_code
-        self.click_ctx = click_ctx
-
-    def show(self, file=None):
-        color = self.click_ctx.color if self.click_ctx else None
-        msg = click.style('Error: %s' % self.format_message(),
-                          fg='bright_white',
-                          bg='red')
-        click.echo(msg, file=file, color=color)
 
 
 def root(config: Optional[Dict] = None,
