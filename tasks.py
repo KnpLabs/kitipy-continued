@@ -92,8 +92,8 @@ def test_unit(kctx: kitipy.Context, report: bool, coverage: bool):
 
     expected_services = len(kctx.stack.config['services'])
     # @TODO: this won't work as is with Swarm, find how to generalize that sort of tests
-    tester = lambda kctx: expected_services == kctx.stack.count_services(
-        filter=('status=running'))
+    tester = lambda kctx: expected_services == kctx.stack.count_running_services(
+    )
     kitipy.wait_for(tester,
                     interval=1,
                     max_checks=5,

@@ -4,7 +4,7 @@ import os
 import subprocess
 import yaml
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from .actions import buildx_build, normalize_labels
 from ..context import Context
@@ -13,6 +13,7 @@ from ..utils import append_cmd_flags
 
 
 class BaseStack(ABC):
+
     @property
     @abstractmethod
     def name(self):
@@ -66,7 +67,11 @@ class BaseStack(ABC):
         pass
 
     @abstractmethod
-    def count_services(self, filter: Optional[Dict[str, str]] = None) -> int:
+    def count_services(self, filter: Optional[Tuple[str]] = None) -> int:
+        pass
+
+    @abstractmethod
+    def count_running_services(self) -> int:
         pass
 
     @abstractmethod
@@ -95,6 +100,7 @@ class BaseStack(ABC):
 
 
 class ComposeStack(BaseStack):
+
     def __init__(self,
                  executor: BaseExecutor,
                  stack_name='',
@@ -102,6 +108,7 @@ class ComposeStack(BaseStack):
                  basedir: str = None):
         self._name = stack_name
         self._executor = executor
+        self._file = file
         self._env = os.environ.copy()
         self._env.update({
             'COMPOSE_PROJECT_NAME': stack_name,
@@ -119,6 +126,10 @@ class ComposeStack(BaseStack):
     def config(self):
         self._load_config()
         return self._config
+
+    @property
+    def file(self):
+        return self._file
 
     def _load_config(self):
         if self._loaded:
@@ -216,9 +227,12 @@ class ComposeStack(BaseStack):
                         check=_check)
         return res
 
-    def count_services(self, filter: Optional[Dict[str, str]] = None) -> int:
+    def count_services(self, filter: Optional[Tuple[str]] = None) -> int:
         res = self.ps(filter=filter, _pipe=True, _check=False)
         return len(res.stdout.splitlines())
+
+    def count_running_services(self) -> int:
+        return self.count_services(filter=('status=running'))  # type: ignore
 
     def logs(self,
              services: List[str] = [],
@@ -245,8 +259,7 @@ class ComposeStack(BaseStack):
             _pipe: bool = False,
             _check: bool = True,
             **kwargs) -> subprocess.CompletedProcess:
-        if len(kwargs) == 0:
-            kwargs = {"rm": True}
+        kwargs.setdefault('rm', True)
         run = append_cmd_flags('docker-compose run', **kwargs)
         return self._run('%s %s %s' % (run, service, cmd),
                          pipe=_pipe,
@@ -284,6 +297,7 @@ class ComposeStack(BaseStack):
 
 
 class SwarmStack(BaseStack):
+
     def __init__(self,
                  executor: BaseExecutor,
                  stack_name='',
@@ -429,10 +443,13 @@ class SwarmStack(BaseStack):
                         check=_check)
         return res
 
-    def count_services(self, filter: Optional[Dict[str, str]] = None) -> int:
+    def count_services(self, filter: Optional[Tuple[str]] = None) -> int:
         services = self.ps(filter=filter, _pipe=True, _check=False)
         # @TODO: improve it (this is actually buggy)
         return len(services.stdout.splitlines())
+
+    def count_running_services(self) -> int:
+        return self.count_services(filter=('status=running'))  # type: ignore
 
     def logs(self,
              services: List[str] = [],
@@ -462,8 +479,7 @@ class SwarmStack(BaseStack):
             _pipe: bool = False,
             _check: bool = True,
             **kwargs) -> subprocess.CompletedProcess:
-        if len(kwargs) == 0:
-            kwargs = {"rm": True}
+        kwargs.setdefault('rm', True)
         run = append_cmd_flags('docker-compose run', **kwargs)
         return self._run('%s %s %s' % (run, service, cmd),
                          pipe=_pipe,
@@ -504,7 +520,9 @@ class SwarmStack(BaseStack):
         return self._executor.run(cmd, **kwargs)
 
 
-def load_stack(kctx: Context, stack_name: str) -> BaseStack:
+def load_stack(kctx: Context,
+               stack_name: str,
+               filename_params: Dict[str, str] = {}) -> BaseStack:
     executor = kctx.executor
     config = kctx.config
 
@@ -528,6 +546,10 @@ def load_stack(kctx: Context, stack_name: str) -> BaseStack:
         raise RuntimeError(
             'No property "file" found in the config of "%s" stack.' %
             (stack_config['name']))
+
+    stage = kctx.stage['name'] if kctx.stage is not None else ''
+    filename_params.setdefault('stage', stage)
+    stack_file = stack_file.format(**filename_params)
 
     if 'swarm' in stack_config and stack_config['swarm']:
         return SwarmStack(executor,

@@ -4,6 +4,7 @@ import subprocess
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
 from .dispatcher import Dispatcher
+from .exceptions import TaskError
 from .executor import BaseExecutor, ProxyExecutor, _create_executor
 
 
@@ -109,11 +110,11 @@ class Context(ProxyExecutor):
                 self._stage = previous
 
     @contextmanager
-    def using_stack(self, stack_name):
+    def using_stack(self, stack_name, filename_params: Dict[str, str] = {}):
         from .docker.stack import load_stack
 
         previous = self._stack
-        stack = load_stack(self, stack_name)
+        stack = load_stack(self, stack_name, filename_params)
         stack_cfg = self.config['stacks'][stack_name]
         basedir = stack_cfg.get('basedir')
 
@@ -144,6 +145,11 @@ class Context(ProxyExecutor):
             kwargs[param.name] = default
 
         callback = cmd.callback
+        if callback is None:
+            raise TaskError(
+                'Could not invoke command "%s" as it has no callback attached.'
+                % (cmd.name))
+
         with click.core.augment_usage_errors(parent):
             with ctx:  # type: ignore
                 return callback(*args, **kwargs)  # type: ignore

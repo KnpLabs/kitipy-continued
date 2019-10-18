@@ -308,7 +308,7 @@ class Group(click.Group):
         if self.invoke_on_help:
             self.invoke_without_command = True
             self.invoke(click_ctx)
-        
+
         kctx = get_current_context(click_ctx)
 
         basedir_cm = contextlib.nullcontext()
@@ -322,7 +322,7 @@ class Group(click.Group):
         stack_cm = contextlib.nullcontext()
         if self.stack is not None:
             stack_cm = kctx.using_stack(self.stack)
-        
+
         with basedir_cm, stage_cm, stack_cm:
             return super().get_help(click_ctx)
 
@@ -501,12 +501,17 @@ class Group(click.Group):
         return decorator
 
 
-class StageGroup(Group):
-    def __init__(self, name: str, **attrs):
-        attrs['filters'] = []
+class StageGroup(click.MultiCommand):
+    def __init__(self,
+                 name: str,
+                 subgroups_params: Optional[Dict[str, Any]] = None,
+                 **attrs):
         super().__init__(name, **attrs)
+        self.subgroups_params = subgroups_params if subgroups_params else {}
+
         self._stages = {}  # type: Dict[str, Group]
         self._all = self._create_stage('all')
+        self._resolved = {}  # type: Dict[str, click.Command]
 
     @property
     def all(self):
@@ -522,31 +527,13 @@ class StageGroup(Group):
     def _create_stage(self, stage_name: str, callback=None) -> Group:
         if callback is None:
             callback = lambda _: ()
-
         callback = _prepend_kctx_wrapper(callback)
-        attrs = {'cls': Group, 'stage': stage_name}
-        return group(stage_name, **attrs)(callback)
 
-    def add_command(self, cmd, name=None):
-        if len(self._resolved) > 0:
-            raise RuntimeError(
-                "This task group structure has already been resolved, you can't merge or add new tasks or commands at this point."
-            )
+        args = self.subgroups_params.copy()
+        args['stage'] = stage_name
+        args.setdefault('cls', Group)
 
-        self._all.add_command(cmd, name)
-
-    def add_transparent_group(self, group: click.MultiCommand):
-        if len(self._resolved) > 0:
-            raise RuntimeError(
-                "This task group structure has already been resolved, you can't add new transparent groups at this point."
-            )
-
-        if group.name in self._transparents:
-            raise KeyError(
-                "There's already a transparent group named %s attached to %s."
-                % (group.name, self.name))
-
-        self._all.add_transparent_group(group)
+        return group(stage_name, **args)(callback)
 
     def _resolve_commands(self, click_ctx: click.Context):
         if len(self._resolved) > 0:
@@ -590,17 +577,15 @@ class StageGroup(Group):
             "You can't directly invoke a StackGroup, you should instead invoke one of its member."
         )
 
-    def stage_group(self, **attrs):
-        raise RuntimeError(
-            "You can't add a stage group to another stage group.")
 
-
-class StackGroup(Group):
-    def __init__(self, name, **attrs):
-        attrs['filters'] = []
+class StackGroup(click.MultiCommand):
+    def __init__(self, name, subgroups_params: Optional[Dict[str, Any]] = None, **attrs):
         super().__init__(name, **attrs)
+        self.subgroups_params = subgroups_params if subgroups_params else {}
+
         self._stacks = {}  # type: Dict[str, Group]
         self._all = self._create_stack('all')
+        self._resolved = {}  # type: Dict[str, click.Command]
 
     @property
     def all(self):
@@ -616,31 +601,13 @@ class StackGroup(Group):
     def _create_stack(self, stack_name: str, callback=None) -> Group:
         if callback is None:
             callback = lambda _: ()
-
         callback = _prepend_kctx_wrapper(callback)
-        attrs = {'cls': Group, 'stack': stack_name}
-        return group(stack_name, **attrs)(callback)
 
-    def add_command(self, cmd, name=None):
-        if len(self._resolved) > 0:
-            raise RuntimeError(
-                "This task group structure has already been resolved, you can't merge or add new tasks or commands at this point."
-            )
+        args = self.subgroups_params.copy()
+        args.setdefault('cls', Group)
+        args['stack'] = stack_name
 
-        self._all.add_command(cmd, name)
-
-    def add_transparent_group(self, group: click.MultiCommand):
-        if len(self._resolved) > 0:
-            raise RuntimeError(
-                "This task group structure has already been resolved, you can't add new transparent groups at this point."
-            )
-
-        if group.name in self._transparents:
-            raise KeyError(
-                "There's already a transparent group named %s attached to %s."
-                % (group.name, self.name))
-
-        self._all.add_transparent_group(group)
+        return group(stack_name, **args)(callback)
 
     def _resolve_commands(self, click_ctx: click.Context):
         if len(self._resolved) > 0:
@@ -683,10 +650,6 @@ class StackGroup(Group):
         raise RuntimeError(
             "You can't directly invoke a StackGroup, you should instead invoke one of its member."
         )
-
-    def stack_group(self, **attrs):
-        raise RuntimeError(
-            "You can't add a stack group to another stack group.")
 
 
 def task(name: Optional[str] = None,
@@ -825,6 +788,10 @@ class RootCommand(Group):
         if len(stages) > 1:
             stage = next((stage for stage in stages if stage.get('default')),
                          None)
+            if stage is None:
+                raise RuntimeError(
+                    'Mutiple stages are defined but none is marked as default.'
+                )
             self.stage = stage['name']
 
         stacks = config['stacks'].values()

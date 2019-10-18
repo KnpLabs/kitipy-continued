@@ -189,6 +189,7 @@ def container_ps(_pipe: bool = False, _check: bool = True,
 
 def container_run(image: str,
                   cmd: str,
+                  rm: bool = True,
                   _pipe: bool = False,
                   _check: bool = True,
                   **kwargs) -> subprocess.CompletedProcess:
@@ -202,6 +203,8 @@ def container_run(image: str,
             Command to run inside the container, with its args.
         **kwargs:
             Take any CLI flag accepted by `docker run`.
+
+            --rm flag is enabled by default.
         _pipe (bool):
             Whether executor pipe mode should be enabled.
         _check (bool):
@@ -216,6 +219,7 @@ def container_run(image: str,
             mode is disabled.
     """
     exec = get_current_executor()
+    kwargs.setdefault('rm', True)
     shcmd = append_cmd_flags('docker container run', **kwargs)
     shcmd += ' %s %s' % (image, cmd)
     return exec.run(shcmd, pipe=_pipe, check=_check)
