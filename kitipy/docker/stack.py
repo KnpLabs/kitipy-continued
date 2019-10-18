@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Union
 
 from .actions import buildx_build, normalize_labels
 from ..context import Context
-from ..executor import Executor
+from ..executor import BaseExecutor
 from ..utils import append_cmd_flags
 
 
@@ -96,7 +96,7 @@ class BaseStack(ABC):
 
 class ComposeStack(BaseStack):
     def __init__(self,
-                 executor: Executor,
+                 executor: BaseExecutor,
                  stack_name='',
                  file='',
                  basedir: str = None):
@@ -285,7 +285,7 @@ class ComposeStack(BaseStack):
 
 class SwarmStack(BaseStack):
     def __init__(self,
-                 executor: Executor,
+                 executor: BaseExecutor,
                  stack_name='',
                  file='',
                  basedir: str = None):
@@ -491,7 +491,7 @@ class SwarmStack(BaseStack):
 
         Args:
             cmd (str): Command to execute
-            **kwargs: Extra arguments passed to Executor.run().
+            **kwargs: Extra arguments passed to BaseExecutor.run().
 
         Raises:
             subprocess.CalledProcessError: When the passed command fail to execute.
@@ -542,7 +542,7 @@ def load_stack(kctx: Context, stack_name: str) -> BaseStack:
 
 
 def _buildx_build_stack(
-        executor: Executor,
+        executor: BaseExecutor,
         stack: BaseStack,
         services: List[str],
         default_context: str,

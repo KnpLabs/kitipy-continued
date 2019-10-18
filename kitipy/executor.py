@@ -8,11 +8,89 @@ import string
 import subprocess
 import sys
 import tempfile
-from typing import Any, Dict, Optional, Tuple, Union
+from abc import ABC, abstractmethod
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 from .dispatcher import Dispatcher
 
 
-class Executor(object):
+class BaseExecutor(ABC):
+    @abstractmethod
+    def local(
+            self,
+            cmd: str,
+            env: Optional[Dict[str, str]] = None,
+            cwd: Optional[str] = None,
+            shell: bool = True,
+            input: Optional[str] = None,
+            text: bool = True,
+            encoding: Optional[str] = None,
+            pipe: bool = False,
+            check: bool = True,
+    ) -> subprocess.CompletedProcess:
+        pass
+
+    @abstractmethod
+    def _remote(
+            self,
+            cmd: str,
+            env: Optional[Dict[str, str]] = None,
+            cwd: Optional[str] = None,
+            input: Optional[str] = None,
+            text: bool = True,
+            encoding: Optional[str] = None,
+            pipe: bool = False,
+            check: bool = True,
+    ) -> subprocess.CompletedProcess:
+        pass
+
+    @abstractmethod
+    def run(
+            self,
+            cmd: str,
+            env: Optional[Dict[str, str]] = None,
+            cwd: Optional[str] = None,
+            shell: bool = True,
+            input: Optional[str] = None,
+            text: bool = True,
+            encoding: Optional[str] = None,
+            pipe: bool = False,
+            check: bool = True,
+    ) -> subprocess.CompletedProcess:
+        pass
+
+    @abstractmethod
+    def copy(self, local_path: str, remote_path: str):
+        pass
+
+    @abstractmethod
+    def mkdtemp(self,
+                suffix: Optional[str] = None,
+                prefix: Optional[str] = None,
+                dir: Optional[str] = None) -> str:
+        pass
+
+    # @TODO: Use some stack-based system  (with a monotonic number?) to help to
+    # easily go back to previous paths.
+    @abstractmethod
+    def cd(self, path: str):
+        pass
+
+    @abstractmethod
+    def path_exists(self, path: str) -> bool:
+        pass
+
+    @property
+    @abstractmethod
+    def is_local(self) -> bool:
+        pass
+
+    @property
+    @abstractmethod
+    def is_remote(self) -> bool:
+        pass
+
+
+class Executor(BaseExecutor):
     """Executor provides a common abstraction to execute commands and
     manipulate files on both local computer and remote machines.
 
@@ -628,3 +706,75 @@ class InteractiveWarningPolicy(paramiko.MissingHostKeyPolicy):
         client._host_keys.add(hostname, key.get_name(), key)
         if client._host_keys_filename is not None:
             client.save_host_keys(client._host_keys_filename)
+
+
+class ProxyExecutor(BaseExecutor):
+    def __init__(self, executor: BaseExecutor):
+        self._executor = executor
+
+    def local(
+            self,
+            cmd: str,
+            env: Optional[Dict[str, str]] = None,
+            cwd: Optional[str] = None,
+            shell: bool = True,
+            input: Optional[str] = None,
+            text: bool = True,
+            encoding: Optional[str] = None,
+            pipe: bool = False,
+            check: bool = True,
+    ) -> subprocess.CompletedProcess:
+        return self._executor.local(cmd, env, cwd, shell, input, text,
+                                    encoding, pipe, check)
+
+    def _remote(
+            self,
+            cmd: str,
+            env: Optional[Dict[str, str]] = None,
+            cwd: Optional[str] = None,
+            input: Optional[str] = None,
+            text: bool = True,
+            encoding: Optional[str] = None,
+            pipe: bool = False,
+            check: bool = True,
+    ) -> subprocess.CompletedProcess:
+        return self._executor._remote(cmd, env, cwd, input, text, encoding,
+                                      pipe, check)
+
+    def run(
+            self,
+            cmd: str,
+            env: Optional[Dict[str, str]] = None,
+            cwd: Optional[str] = None,
+            shell: bool = True,
+            input: Optional[str] = None,
+            text: bool = True,
+            encoding: Optional[str] = None,
+            pipe: bool = False,
+            check: bool = True,
+    ) -> subprocess.CompletedProcess:
+        return self._executor.run(cmd, env, cwd, shell, input, text, encoding,
+                                  pipe, check)
+
+    def copy(self, local_path: str, remote_path: str):
+        return self._executor.copy(local_path, remote_path)
+
+    def mkdtemp(self,
+                suffix: Optional[str] = None,
+                prefix: Optional[str] = None,
+                dir: Optional[str] = None) -> str:
+        return self._executor.mkdtemp(suffix, prefix, dir)
+
+    def cd(self, path: str):
+        self._executor.cd(path)
+
+    def path_exists(self, path: str) -> bool:
+        return self._executor.path_exists(path)
+
+    @property
+    def is_local(self) -> bool:
+        return self._executor.is_local
+
+    @property
+    def is_remote(self) -> bool:
+        return self._executor.is_remote

@@ -31,7 +31,6 @@ def pytest(kctx: kitipy.Context, report_name: Optional[str], coverage: bool,
         basecmd += ' --cov=kitipy/'
 
     kctx.local('%s %s' % (basecmd, cmd), **args)
-    kctx.local('pytest ' + cmd, **args)
 
 
 @kitipy.root(config_file=None, config=config)

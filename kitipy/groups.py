@@ -313,7 +313,7 @@ class Group(click.Group):
         resolved = self._resolve_commands(click_ctx).values()
         subcommands = [cmd.name for cmd, group in resolved if group is self]
         self._print_group_help_section(click_ctx, 'Commands', self,
-                                       subcommands, formatter)
+                                       sorted(subcommands), formatter)
 
     def _print_group_help_section(self, click_ctx: click.Context,
                                   section_name: str, group, subcommands,
