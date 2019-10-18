@@ -16,12 +16,18 @@ config = {
 }
 
 
-def pytest(kctx: kitipy.Context, cmd: str, **args):
+def pytest(kctx: kitipy.Context, report_name: Optional[str], cmd: str, **args):
     env = os.environ.copy()
     env['PYTHONPATH'] = os.getcwd()
     args.setdefault('env', env)
 
-    kctx.local('pytest ' + cmd, **args)
+    basecmd = 'pytest'
+    if report_name:
+        if not kctx.path_exists('.test-results'):
+            os.mkdir('.test-results')
+        basecmd += ' --junitxml=.test-results/%s' % (report_name)
+
+    kctx.local('%s %s' % (basecmd, cmd), **args)
 
 
 @kitipy.root(config_file=None, config=config)
@@ -63,14 +69,16 @@ def test():
 
 
 @test.task(name='all')
-def test_all(kctx: kitipy.Context):
+@click.option('--report', is_flag=True, type=bool, default=False, envvar='CI')
+def test_all(kctx: kitipy.Context, report: bool):
     """Execute all the tests suites."""
     kctx.invoke(test_unit)
     kctx.invoke(test_tasks)
 
 
 @test.task(name='unit')
-def test_unit(kctx: kitipy.Context):
+@click.option('--report', is_flag=True, type=bool, default=False, envvar='CI')
+def test_unit(kctx: kitipy.Context, report: bool):
     # Be sure the SSH container used for tests purpose is up and running.
     # @TODO: add a common way to kitipy to wait for a port to be open
     kctx.invoke(kitipy.docker.tasks.up)
@@ -101,18 +109,22 @@ def test_unit(kctx: kitipy.Context):
         'ssh -F tests/.ssh/config testhost-via-jumphost /bin/true 1>/dev/null 2>&1'
     )
 
-    pytest(kctx, 'tests/unit/ -vv')
+    report_name = 'unit.xml' if report else None
+    pytest(kctx, report_name, 'tests/unit/ -vv')
 
 
 @test.task(name='tasks')
+@click.option('--report', is_flag=True, type=bool, default=False, envvar='CI')
 @click.argument('suites', nargs=-1, type=str)
-def test_tasks(kctx: kitipy.Context, suites: List[str]):
+def test_tasks(kctx: kitipy.Context, suites: List[str], report: bool):
     if len(suites) == 0:
-        pytest(kctx, 'tests/tasks/ -vv')
+        report_name = 'tasks_all.xml' if report else None
+        pytest(kctx, report_name, 'tests/tasks/ -vv')
         return
 
     for suite in suites:
-        pytest(kctx, 'tests/tasks/test_%s.py -vv' % (suite))
+        report_name = 'tasks_%s.xml' % (suite) if report else None
+        pytest(kctx, report_name, 'tests/tasks/test_%s.py -vv' % (suite))
 
 
 @test.task(name='generate-git-tgz')
