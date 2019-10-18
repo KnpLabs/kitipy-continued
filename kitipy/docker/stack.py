@@ -136,11 +136,13 @@ class ComposeStack(BaseStack):
               services: List[str] = [],
               _pipe: bool = False,
               _check: bool = True,
+              _env: Optional[Dict[str, str]] = None,
               **kwargs) -> subprocess.CompletedProcess:
         cmd = append_cmd_flags('docker-compose build', **kwargs)
-        return self._run('%s %s' % (cmd, ' '.join(services)),
-                         pipe=_pipe,
-                         check=_check)
+        return self._local('%s %s' % (cmd, ' '.join(services)),
+                           pipe=_pipe,
+                           check=_check,
+                           env=_env)
 
     def buildx_build(self, services: List[str] = [], **kwargs):
         """Mimic `docker-compose build` using `docker buildx build`.
@@ -274,6 +276,11 @@ class ComposeStack(BaseStack):
         kwargs.setdefault('env', self._env)
         kwargs.setdefault('cwd', self._basedir)
         return self._executor.run(cmd, **kwargs)
+
+    def _local(self, cmd: str, **kwargs) -> subprocess.CompletedProcess:
+        kwargs.setdefault('env', self._env)
+        kwargs.setdefault('cwd', self._basedir)
+        return self._executor.local(cmd, **kwargs)
 
 
 class SwarmStack(BaseStack):

@@ -16,7 +16,8 @@ config = {
 }
 
 
-def pytest(kctx: kitipy.Context, report_name: Optional[str], cmd: str, **args):
+def pytest(kctx: kitipy.Context, report_name: Optional[str], coverage: bool,
+           cmd: str, **args):
     env = os.environ.copy()
     env['PYTHONPATH'] = os.getcwd()
     args.setdefault('env', env)
@@ -26,8 +27,11 @@ def pytest(kctx: kitipy.Context, report_name: Optional[str], cmd: str, **args):
         if not kctx.path_exists('.test-results'):
             os.mkdir('.test-results')
         basecmd += ' --junitxml=.test-results/%s' % (report_name)
+    if coverage:
+        basecmd += ' --cov=kitipy/'
 
     kctx.local('%s %s' % (basecmd, cmd), **args)
+    kctx.local('pytest ' + cmd, **args)
 
 
 @kitipy.root(config_file=None, config=config)
@@ -37,22 +41,24 @@ def root():
 
 @root.task()
 @click.option('--diff/--no-diff', 'show_diff', default=True)
-@click.option('--force', is_flag=True, default=None)
-def format(kctx: kitipy.Context, show_diff, force):
+@click.option('--fix/--no-fix', default=None)
+def format(kctx: kitipy.Context, show_diff, fix):
     """Run yapf to detect style divergences and fix them."""
-    confirm_message = 'Do you want to reformat your code using yapf?'
-    apply = show_diff is False
+    if not show_diff and not fix:
+        kctx.fail("You can't use both --no-diff and --no-fix at the same time.")
 
-    if show_diff:
-        diff = kctx.local('yapf --diff -r kitipy/ tests/ tasks*.py',
-                          check=False)
-        confirm_message = 'Do you want to apply this diff?'
-        apply = diff.returncode != 0
+    confirm_msg = 'Do you want to reformat your code using yapf?'
 
-    if force is None and apply:
-        force = click.confirm(confirm_message, default=True)
-    if force and apply:
-        kctx.local('yapf -vv -p -i -r kitipy/ tests/ tasks*.py')
+    dry_run = lambda: kctx.local('yapf --diff -r kitipy/ tests/ tasks*.py',
+                                 check=False)
+    apply = lambda: kctx.local('yapf -vv -p -i -r kitipy/ tests/ tasks*.py')
+
+    kitipy.confirm_and_apply(dry_run,
+                             confirm_msg,
+                             apply,
+                             show_dry_run=show_diff,
+                             ask_confirm=fix is None,
+                             should_apply=fix if fix is not None else True)
 
 
 @root.task()
@@ -70,7 +76,8 @@ def test():
 
 @test.task(name='all')
 @click.option('--report', is_flag=True, type=bool, default=False, envvar='CI')
-def test_all(kctx: kitipy.Context, report: bool):
+@click.option('--coverage', is_flag=True, type=bool, default=False, envvar='CI')
+def test_all(kctx: kitipy.Context, report: bool, coverage: bool):
     """Execute all the tests suites."""
     kctx.invoke(test_unit)
     kctx.invoke(test_tasks)
@@ -78,7 +85,8 @@ def test_all(kctx: kitipy.Context, report: bool):
 
 @test.task(name='unit')
 @click.option('--report', is_flag=True, type=bool, default=False, envvar='CI')
-def test_unit(kctx: kitipy.Context, report: bool):
+@click.option('--coverage', is_flag=True, type=bool, default=False, envvar='CI')
+def test_unit(kctx: kitipy.Context, report: bool, coverage: bool):
     # Be sure the SSH container used for tests purpose is up and running.
     # @TODO: add a common way to kitipy to wait for a port to be open
     kctx.invoke(kitipy.docker.tasks.up)
@@ -110,21 +118,24 @@ def test_unit(kctx: kitipy.Context, report: bool):
     )
 
     report_name = 'unit.xml' if report else None
-    pytest(kctx, report_name, 'tests/unit/ -vv')
+    pytest(kctx, report_name, coverage, 'tests/unit/ -vv')
 
 
 @test.task(name='tasks')
 @click.option('--report', is_flag=True, type=bool, default=False, envvar='CI')
+@click.option('--coverage', is_flag=True, type=bool, default=False, envvar='CI')
 @click.argument('suites', nargs=-1, type=str)
-def test_tasks(kctx: kitipy.Context, suites: List[str], report: bool):
+def test_tasks(kctx: kitipy.Context, suites: List[str], report: bool,
+               coverage: bool):
     if len(suites) == 0:
         report_name = 'tasks_all.xml' if report else None
-        pytest(kctx, report_name, 'tests/tasks/ -vv')
+        pytest(kctx, report_name, coverage, 'tests/tasks/ -vv')
         return
 
     for suite in suites:
         report_name = 'tasks_%s.xml' % (suite) if report else None
-        pytest(kctx, report_name, 'tests/tasks/test_%s.py -vv' % (suite))
+        pytest(kctx, report_name, coverage,
+               'tests/tasks/test_%s.py -vv' % (suite))
 
 
 @test.task(name='generate-git-tgz')

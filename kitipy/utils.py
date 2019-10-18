@@ -4,6 +4,7 @@ import os.path
 import time
 import yaml
 import subprocess
+import sys
 from typing import Callable, Dict, Optional, TypeVar
 from .exceptions import TaskError
 
@@ -248,3 +249,30 @@ def wait_for(tester: TesterCallable,
         time.sleep(interval)
 
     kctx.fail("Failed to %s" % (label.lower()))
+
+
+# @TODO: add string confirmation (like "enter environment name expected: prod)")
+def confirm_and_apply(
+        dry_run: Callable[[], Optional[subprocess.CompletedProcess]],
+        confirm_msg: str,
+        apply: Callable[[], None],
+        show_dry_run: bool = True,
+        ask_confirm: bool = True,
+        should_apply: bool = True,
+        confirm_default=True):
+    exit_code = 0
+    if show_dry_run:
+        res = dry_run()
+        exit_code = res.returncode if res else 0
+        should_apply = exit_code != 0 if should_apply else False
+
+    if not should_apply:
+        if exit_code == 0:
+            return
+        raise TaskError("Dry run failed.", exit_code=exit_code)
+
+    if ask_confirm:
+        if not click.confirm(confirm_msg, default=confirm_default):
+            sys.exit(exit_code)
+
+    apply()

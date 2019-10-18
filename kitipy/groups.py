@@ -25,7 +25,7 @@ class Task(click.Command):
     """
     def __init__(self,
                  name: str,
-                 filters: List[Callable[[click.Context], bool]] = [],
+                 filters: Optional[List[Callable[[click.Context], bool]]] = None,
                  cwd: Optional[str] = None,
                  **kwargs):
         """
@@ -52,7 +52,7 @@ class Task(click.Command):
                 constructor.
         """
         super().__init__(name, **kwargs)
-        self.filters = filters
+        self.filters = filters if filters else []
         self.cwd = cwd
 
     def is_enabled(self, click_ctx: click.Context) -> bool:
@@ -84,8 +84,8 @@ class Task(click.Command):
             raise TaskError('Task "%s" is filtered out.' % self.name)
 
         if self.cwd is not None:
-            exec = get_current_executor()
-            exec.cd(self.cwd)
+            kctx = get_current_context(click_ctx)
+            kctx.cd(self.cwd)
 
         return super().invoke(click_ctx)
 
@@ -98,7 +98,8 @@ class Group(click.Group):
     def __init__(self,
                  name=None,
                  commands=None,
-                 filters: List[Callable[[click.Context], bool]] = [],
+                 tasks: Optional[List[Task]] = None,
+                 filters: Optional[List[Callable[[click.Context], bool]]] = None,
                  cwd: Optional[str] = None,
                  invoke_on_help: bool = False,
                  transparents: List[click.MultiCommand] = [],
@@ -125,11 +126,13 @@ class Group(click.Group):
                 Any other constructor parameters accepted by click.Group.
         """
         super().__init__(name, commands, **attrs)
-        self._transparents = {}  # type: Dict[str, click.MultiCommand]
-        self._resolved = {}  # type: Dict[str, click.Command]
-        self.filters = filters
+        self.tasks = tasks if tasks else []
+        self.filters = filters if filters else []
         self.cwd = cwd
         self.invoke_on_help = invoke_on_help
+        self._transparents = {}  # type: Dict[str, click.MultiCommand]
+        self._resolved = {
+        }  # type: Dict[str, Tuple[click.Command, click.MultiCommand]]
 
         for group in transparents:
             self.add_transparent_group(group)
@@ -144,7 +147,10 @@ class Group(click.Group):
                 "This task group structure has already been resolved, you can't merge or add new tasks or commands at this point."
             )
 
-        super().add_command(cmd, name)
+        if isinstance(cmd, (Task, Group)):
+            self.tasks.append(cmd)
+        else:
+            super().add_command(cmd, name)
 
     def add_transparent_group(self, group: click.MultiCommand):
         if len(self._resolved) > 0:
@@ -174,6 +180,9 @@ class Group(click.Group):
                 self.add_command(cmd)
 
             if isinstance(src, Group):
+                for task in src.tasks:
+                    self.add_command(task)
+
                 for group in src.transparent_groups:
                     self.add_transparent_group(group)
 
@@ -207,7 +216,9 @@ class Group(click.Group):
 
         origins = dict(zip(names,
                            origs))  # type: Dict[str, click.MultiCommand]
-        resolved = dict(zip(names, cmds))  # type: Dict[str, click.Command]
+        resolved = dict(
+            zip(names, zip(cmds, origs)
+                ))  # type: Dict[str, Tuple[click.Command, click.MultiCommand]]
 
         for group_name, group in self._transparents.items():
             subcommands = self._filter_command_list(click_ctx, group)
@@ -219,17 +230,15 @@ class Group(click.Group):
 
             colliding = list(set(origins.keys()) & set(sub_names))
             if len(colliding) > 0:
-                colliding_errors = [
-                    '"%s" from "%s"' % (name, resolved[name])
-                    for name in colliding
-                ]
-                error = ', '.join(colliding_errors)
-
+                error = ', '.join([
+                    '"%s" from "%s"' % (cmd_name, origins[cmd_name].name)
+                    for cmd_name in colliding
+                ])
                 raise RuntimeError(
                     'The transparent group "%s" adds command(s) colliding with: %s.'
                     % (group.name, error))
 
-            resolved.update(dict(zip(sub_names, sub_cmds)))
+            resolved.update(dict(zip(sub_names, zip(sub_cmds, sub_origs))))
             origins.update(dict(zip(sub_names, sub_origs)))
 
         self._resolved = resolved
@@ -238,21 +247,30 @@ class Group(click.Group):
     def _filter_command_list(
             self, click_ctx: click.Context, group: click.MultiCommand
     ) -> List[Tuple[str, click.MultiCommand, click.Command]]:
-        group = super() if group is self else group  # type: ignore
-        commands = group.list_commands(click_ctx)
+        cmd_group = super() if group is self else group
         filtered = [
         ]  # type: List[Tuple[str, click.MultiCommand, click.Command]]
 
+        commands = cmd_group.list_commands(click_ctx)  # type: ignore
         for cmd_name in commands:
-            cmd = group.get_command(click_ctx, cmd_name)
+            cmd = cmd_group.get_command(click_ctx, cmd_name)  # type: ignore
             if cmd is None:
                 continue
 
-            if isinstance(cmd, Task) or isinstance(cmd, Group):
-                if cmd.is_enabled(click_ctx):
-                    filtered.append((cmd_name, group, cmd))
-            elif not cmd.hidden:
-                filtered.append((cmd_name, group, cmd))
+            if not cmd.hidden:
+                filtered.append((cmd_name, cmd_group, cmd))  # type: ignore
+
+        tasks = group.tasks if isinstance(group, Group) else []
+        for task in tasks:
+            if not task.is_enabled(click_ctx):
+                continue
+
+            if task.name in filtered:
+                raise RuntimeError(
+                    'Two tasks/commands with the same name and successful filters are attached to the group named "%s".'
+                    % (self.name))
+
+            filtered.append((task.name, group, task))
 
         return filtered
 
@@ -268,8 +286,7 @@ class Group(click.Group):
         resolved = self._resolve_commands(click_ctx)
         if cmd_name not in resolved:
             return None
-
-        return resolved[cmd_name]
+        return resolved[cmd_name][0]
 
     def list_commands(self, click_ctx: click.Context):
         """This is a click.Group method overriden to implement
@@ -293,7 +310,8 @@ class Group(click.Group):
             self._print_group_help_section(click_ctx, group_name, group,
                                            subcommands, formatter)
 
-        subcommands = super().list_commands(click_ctx)
+        resolved = self._resolve_commands(click_ctx).values()
+        subcommands = [cmd.name for cmd, group in resolved if group is self]
         self._print_group_help_section(click_ctx, 'Commands', self,
                                        subcommands, formatter)
 
@@ -338,8 +356,8 @@ class Group(click.Group):
             raise TaskError('Task "%s" is filtered out.' % self.name)
 
         if self.cwd is not None:
-            exec = get_current_executor()
-            exec.cd(self.cwd)
+            kctx = get_current_context(click_ctx)
+            kctx.cd(self.cwd)
 
         # The code below is directly copied from click.Group.invoke().
         # The two major differences are: chain mode has been removed and more
@@ -454,6 +472,8 @@ class StageGroup(Group):
         return self._all
 
     def __getattr__(self, name):
+        if name.startswith('_'):
+            raise AttributeError("Stage group names can't start with an underscore.")
         if name not in self._stages:
             self._stages[name] = self._create_stage(name)
         return self._stages[name]
@@ -494,11 +514,10 @@ class StageGroup(Group):
         stages = {}
 
         for name in stages_cfg.keys():
-            if name in self._stages:
-                stages[name] = self._stages[name]
-            else:
-                stages[name] = self._create_stage(name)
-            stages[name].merge(self._all)
+            group = self.__getattr__(name)
+            group.merge(self._all)
+
+            stages[name] = (group, self)
 
         self._resolved = stages  # type: ignore
         return self._resolved
@@ -517,7 +536,7 @@ class StageGroup(Group):
 
     def get_command(self, click_ctx: click.Context, cmd_name: str):
         resolved = self._resolve_commands(click_ctx)
-        return resolved[cmd_name] if cmd_name in resolved else None
+        return resolved[cmd_name][0] if cmd_name in resolved else None
 
     def format_help(self, click_ctx, formatter):
         raise RuntimeError("StackGroups don't have any specific help message.")
@@ -544,6 +563,8 @@ class StackGroup(Group):
         return self._all
 
     def __getattr__(self, name):
+        if name.startswith('_'):
+            raise AttributeError("Stack group names can't start with an underscore.")
         if name not in self._stacks:
             self._stacks[name] = self._create_stack(name)
         return self._stacks[name]
@@ -585,11 +606,10 @@ class StackGroup(Group):
         stacks = {}  # type: Dict[str, Group]
 
         for name in stacks_cfg.keys():
-            if name in self._stacks:
-                stacks[name] = self._stacks[name]
-            else:
-                stacks[name] = self._create_stack(name)
-            stacks[name].merge(self._all)
+            group = self.__getattr__(name)
+            group.merge(self._all)
+
+            stacks[name] = (group, self)
 
         self._resolved = stacks  # type: ignore
         return self._resolved
@@ -608,7 +628,7 @@ class StackGroup(Group):
 
     def get_command(self, click_ctx: click.Context, cmd_name: str):
         resolved = self._resolve_commands(click_ctx)
-        return resolved[cmd_name] if cmd_name in resolved else None
+        return resolved[cmd_name][0] if cmd_name in resolved else None
 
     def format_help(self, click_ctx, formatter):
         raise RuntimeError("StackGroups don't have any specific help message.")

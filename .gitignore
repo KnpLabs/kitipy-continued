@@ -1,2 +1,3 @@
+.coverage
 .test-results/
 Pipfile.lock
