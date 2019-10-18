@@ -1,5 +1,7 @@
 import click
+import contextlib
 import subprocess
+from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
 from .dispatcher import Dispatcher
 from .executor import BaseExecutor, ProxyExecutor, _create_executor
@@ -68,34 +70,63 @@ class Context(ProxyExecutor):
         """
         super().__init__(executor)
         self.config = config
-        self.stage = stage
-        self.stack = stack
+        self._stage = stage
+        self._stack = stack
         self.dispatcher = dispatcher
+
+    @property
+    def stack(self):
+        return self._stack
+
+    @property
+    def stage(self):
+        return self._stage
 
     @property
     def executor(self):
         return self._executor
 
-    def with_stage(self, stage_name: str):
-        """Change the current Context stage.
+    @contextmanager
+    def using_executor(self, executor: BaseExecutor):
+        previous = self.executor
+        try:
+            self._executor = executor
+            yield None
+        finally:
+            self._executor = previous
 
-        Args:
-            stage_name (str): Name of the stage to use.
+    @contextmanager
+    def using_stage(self, stage_name: str):
+        exec = _create_executor(self.config, stage_name, self.dispatcher)
+        stage = self.config['stages'][stage_name]
+        previous = self._stage
 
-        Raises:
-            KeyError: If the stage couldn't be found in the Context config.
-        """
-        self.stage = self.config['stages'][stage_name]
-        self._executor = _create_executor(self.config, stage_name,
-                                          self.dispatcher)
+        with self.using_executor(exec):
+            try:
+                self._stage = stage
+                yield None
+            finally:
+                self._stage = previous
 
-    def with_stack(self, stack_name: str):
-        # This has to be imported here to avoid circular dependencies
+    @contextmanager
+    def using_stack(self, stack_name):
         from .docker.stack import load_stack
 
-        self.stack = load_stack(self, stack_name)
+        previous = self._stack
+        stack = load_stack(self, stack_name)
         stack_cfg = self.config['stacks'][stack_name]
-        self.executor.cd(stack_cfg.get('basedir', './'))
+        basedir = stack_cfg.get('basedir')
+
+        cm = contextlib.nullcontext()
+        if basedir:
+            cm = self.cd(basedir)
+
+        with cm:
+            try:
+                self._stack = stack
+                yield None
+            finally:
+                self._stack = previous
 
     def invoke(self, cmd: click.Command, *args, **kwargs):
         """Call invoke() method on current click.Context"""

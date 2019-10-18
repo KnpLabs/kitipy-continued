@@ -3,8 +3,8 @@ from .context import Context, pass_context, get_current_context, get_current_exe
 from .exceptions import TaskError
 from .executor import Executor, InteractiveWarningPolicy
 from .groups import Task, Group, RootCommand, StackGroup, StageGroup, root, task, group
-from .utils import append_cmd_flags, confirm_and_apply, load_config_file, normalize_config, set_up_file_transfer_listeners, wait_for
-from . import filters
+from .utils import append_cmd_flags, confirm_and_apply, invoke_tree, load_config_file, normalize_config, set_up_file_transfer_listeners, wait_for
+from . import docker, filters
 
 from . import ansible_actions, git_actions
 
@@ -36,11 +36,11 @@ __all__ = [
     # from utils module
     'append_cmd_flags',
     'confirm_and_apply',
+    'invoke_tree',
     'load_config_file',
     'normalize_config',
     'set_up_file_transfer_listeners',
     'wait_for',
-    'confirm_and_apply',
 
     # action modules
     'ansible_actions',
