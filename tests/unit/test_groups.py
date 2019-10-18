@@ -367,7 +367,7 @@ def test_adding_a_task_to_a_whole_stages_group_adds_them_to_all_of_the_subgroups
 def test_adding_a_stacks_group_to_a_whole_stages_group_adds_it_to_all_of_the_stages_subgroups(
         click_ctx, kctx):
     stages = kitipy.StageGroup(name='stages')
-    stacks = stages.stack_group(name='stacks')(lambda: ())
+    stacks = stages.all.stack_group(name='stacks')(lambda: ())
 
     assert isinstance(stacks, kitipy.StackGroup)
     assert stages.all.transparent_groups == [stacks]
@@ -389,14 +389,6 @@ def test_adding_a_stacks_group_to_a_whole_stages_group_adds_it_to_all_of_the_sta
 
     assert dev_group.list_commands(click_ctx) == ['api', 'front']
     assert prod_group.list_commands(click_ctx) == ['api', 'front']
-
-
-def test_adding_a_stages_group_to_another_stages_group_raises_an_exception(
-        click_ctx, kctx):
-    stages = kitipy.StageGroup(name='stages')
-
-    with pytest.raises(RuntimeError):
-        stages.stage_group(name='another')
 
 
 def test_invoking_a_stages_group_is_not_supported(click_ctx):
@@ -466,7 +458,7 @@ def test_adding_a_task_to_a_whole_stacks_group_adds_them_to_all_of_the_subgroups
 def test_adding_a_stages_group_to_a_whole_stacks_group_adds_it_to_all_of_the_stack_subgroups(
         click_ctx, kctx):
     stacks = kitipy.StackGroup(name='stacks')
-    stages = stacks.stage_group(name='stages')(lambda: ())
+    stages = stacks.all.stage_group(name='stages')(lambda _: ())
 
     assert isinstance(stages, kitipy.StageGroup)
     assert stacks.all.transparent_groups == [stages]
@@ -488,14 +480,6 @@ def test_adding_a_stages_group_to_a_whole_stacks_group_adds_it_to_all_of_the_sta
 
     assert api_group.list_commands(click_ctx) == ['dev', 'prod']
     assert front_group.list_commands(click_ctx) == ['dev', 'prod']
-
-
-def test_adding_a_stack_group_to_another_stack_group_raises_an_exception(
-        click_ctx, kctx):
-    stacks = kitipy.StackGroup(name='stacks')
-
-    with pytest.raises(RuntimeError):
-        stacks.stack_group(name='another')
 
 
 def test_invoking_a_stacks_group_is_not_supported(click_ctx):

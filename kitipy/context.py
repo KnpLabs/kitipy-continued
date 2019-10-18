@@ -4,6 +4,7 @@ import subprocess
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
 from .dispatcher import Dispatcher
+from .exceptions import TaskError
 from .executor import BaseExecutor, ProxyExecutor, _create_executor
 
 
@@ -144,6 +145,11 @@ class Context(ProxyExecutor):
             kwargs[param.name] = default
 
         callback = cmd.callback
+        if callback is None:
+            raise TaskError(
+                'Could not invoke command "%s" as it has no callback attached.'
+                % (cmd.name))
+
         with click.core.augment_usage_errors(parent):
             with ctx:  # type: ignore
                 return callback(*args, **kwargs)  # type: ignore

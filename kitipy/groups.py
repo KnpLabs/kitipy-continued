@@ -504,10 +504,10 @@ class Group(click.Group):
 class StageGroup(click.MultiCommand):
     def __init__(self,
                  name: str,
-                 subgroups_params: Dict[str, Any] = {},
+                 subgroups_params: Optional[Dict[str, Any]] = None,
                  **attrs):
         super().__init__(name, **attrs)
-        self.subgroups_params = subgroups_params
+        self.subgroups_params = subgroups_params if subgroups_params else {}
 
         self._stages = {}  # type: Dict[str, Group]
         self._all = self._create_stage('all')
@@ -579,9 +579,9 @@ class StageGroup(click.MultiCommand):
 
 
 class StackGroup(click.MultiCommand):
-    def __init__(self, name, subgroups_params: Dict[str, Any], **attrs):
+    def __init__(self, name, subgroups_params: Optional[Dict[str, Any]] = None, **attrs):
         super().__init__(name, **attrs)
-        self.subgroups_params = subgroups_params
+        self.subgroups_params = subgroups_params if subgroups_params else {}
 
         self._stacks = {}  # type: Dict[str, Group]
         self._all = self._create_stack('all')

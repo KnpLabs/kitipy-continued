@@ -4,7 +4,7 @@ import os
 import subprocess
 import yaml
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from .actions import buildx_build, normalize_labels
 from ..context import Context
@@ -67,7 +67,7 @@ class BaseStack(ABC):
         pass
 
     @abstractmethod
-    def count_services(self, filter: Optional[Dict[str, str]] = None) -> int:
+    def count_services(self, filter: Optional[Tuple[str]] = None) -> int:
         pass
 
     @abstractmethod
@@ -227,12 +227,12 @@ class ComposeStack(BaseStack):
                         check=_check)
         return res
 
-    def count_services(self, filter: Optional[Dict[str, str]] = None) -> int:
+    def count_services(self, filter: Optional[Tuple[str]] = None) -> int:
         res = self.ps(filter=filter, _pipe=True, _check=False)
         return len(res.stdout.splitlines())
 
     def count_running_services(self) -> int:
-        return self.count_sevices(filter=('status=running'))
+        return self.count_services(filter=('status=running'))  # type: ignore
 
     def logs(self,
              services: List[str] = [],
@@ -443,13 +443,13 @@ class SwarmStack(BaseStack):
                         check=_check)
         return res
 
-    def count_services(self, filter: Optional[Dict[str, str]] = None) -> int:
+    def count_services(self, filter: Optional[Tuple[str]] = None) -> int:
         services = self.ps(filter=filter, _pipe=True, _check=False)
         # @TODO: improve it (this is actually buggy)
         return len(services.stdout.splitlines())
 
     def count_running_services(self) -> int:
-        return self.count_sevices(filter=('status=running'))
+        return self.count_services(filter=('status=running'))  # type: ignore
 
     def logs(self,
              services: List[str] = [],
