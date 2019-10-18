@@ -105,11 +105,12 @@ class ComposeStack(BaseStack):
                  executor: BaseExecutor,
                  stack_name='',
                  file='',
-                 basedir: str = None):
+                 basedir: str = None,
+                 env: Optional[Dict[str, str]] = None):
         self._name = stack_name
         self._executor = executor
         self._file = file
-        self._env = os.environ.copy()
+        self._env = env if env else {}
         self._env.update({
             'COMPOSE_PROJECT_NAME': stack_name,
             'COMPOSE_FILE': file,
@@ -286,12 +287,20 @@ class ComposeStack(BaseStack):
         return data[0]['NetworkSettings']['Networks'][network]['IPAddress']
 
     def _run(self, cmd: str, **kwargs) -> subprocess.CompletedProcess:
-        kwargs.setdefault('env', self._env)
+        env = self._env.copy()
+        if 'env' in kwargs:
+            env.update(kwargs['env'])
+
+        kwargs['env'] = env
         kwargs.setdefault('cwd', self._basedir)
         return self._executor.run(cmd, **kwargs)
 
     def _local(self, cmd: str, **kwargs) -> subprocess.CompletedProcess:
-        kwargs.setdefault('env', self._env)
+        env = self._env.copy()
+        if 'env' in kwargs:
+            env.update(kwargs['env'])
+
+        kwargs['env'] = env
         kwargs.setdefault('cwd', self._basedir)
         return self._executor.local(cmd, **kwargs)
 
@@ -346,13 +355,14 @@ class SwarmStack(BaseStack):
               services: List[str] = [],
               _pipe: bool = False,
               _check: bool = True,
+              _env: Optional[Dict[str, str]] = None,
               **kwargs) -> subprocess.CompletedProcess:
         cmd = append_cmd_flags('docker-compose build', **kwargs)
         # Unfortunatly, the only way to build images from swarm files is to use
         # docker-compose, which complains about external secrets.
         cmd = '%s %s 2>&1 | grep -v "External secrets are not available"' % (
             cmd, ' '.join(services))
-        return self._run(cmd, pipe=_pipe, check=_check)
+        return self._local(cmd, pipe=_pipe, check=_check, env=_env)
 
     def buildx_build(self, services: List[str] = [], **kwargs):
         """Mimic `docker-compose build` using `docker buildx build`.
@@ -515,9 +525,22 @@ class SwarmStack(BaseStack):
         Returns:
             subprocess.CompletedProcess: 
         """
-        kwargs.setdefault('env', self._env)
+        env = self._env.copy()
+        if 'env' in kwargs:
+            env.update(kwargs['env'])
+
+        kwargs['env'] = env
         kwargs.setdefault('cwd', self._basedir)
         return self._executor.run(cmd, **kwargs)
+
+    def _local(self, cmd: str, **kwargs) -> subprocess.CompletedProcess:
+        env = self._env.copy()
+        if 'env' in kwargs:
+            env.update(kwargs['env'])
+
+        kwargs['env'] = env
+        kwargs.setdefault('cwd', self._basedir)
+        return self._executor.local(cmd, **kwargs)
 
 
 def load_stack(kctx: Context,
