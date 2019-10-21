@@ -50,11 +50,18 @@ def ps(kctx: kitipy.Context):
     kctx.stack.ps()
 
 
-@docker_tasks.task()
+@docker_tasks.task(name='logs', filters=[swarm_only])
 @click.argument('services', nargs=-1, type=str)
 @click.option('--since', type=str, default="1m")
-def logs(kctx: kitipy.Context, services: List[str], since: str):
+def logs_swarm(kctx: kitipy.Context, services: List[str], since: str):
     kctx.stack.logs(services, since=since, follow=True)
+
+
+@docker_tasks.task(name='logs', filters=[compose_only])
+@click.argument('services', nargs=-1, type=str)
+@click.option('--tail', type=str, default='10')
+def logs_compose(kctx: kitipy.Context, services: List[str], tail: str):
+    kctx.stack.logs(services, tail=tail, follow=True)
 
 
 @docker_tasks.task()
