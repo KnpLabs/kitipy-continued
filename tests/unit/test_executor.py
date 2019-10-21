@@ -20,7 +20,7 @@ def executor(request):
 
     if request.param == "local":
         basedir = tempfile.mkdtemp()
-        yield kitipy.Executor(basedir, dispatcher)
+        yield kitipy.Executor(dispatcher, local_basedir=basedir)
         shutil.rmtree(basedir)
         return
 
@@ -28,8 +28,8 @@ def executor(request):
     if request.param == "remote_with_jumphost":
         hostname = 'testhost-via-jumphost'
 
-    executor = kitipy.Executor(str(pathlib.Path.home()),
-                               dispatcher,
+    executor = kitipy.Executor(dispatcher,
+                               local_basedir=str(pathlib.Path.home()),
                                hostname=hostname,
                                ssh_config_file=ssh_config_file,
                                paramiko_config={
