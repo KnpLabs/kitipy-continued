@@ -10,5 +10,6 @@ setuptools.setup(
         "click>=7.0",
         "paramiko>=2.6.0",
         "PyYAML>=5.1",
+        "requests>=2.23.0",
     ],
 )
