@@ -598,6 +598,9 @@ class StackGroup(click.MultiCommand):
             self._stacks[name] = self._create_stack(name)
         return self._stacks[name]
 
+    def __getitem__(self, name):
+        return self.__getattr__(name)
+
     def _create_stack(self, stack_name: str, callback=None) -> Group:
         if callback is None:
             callback = lambda _: ()
