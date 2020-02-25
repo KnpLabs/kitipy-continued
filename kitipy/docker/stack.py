@@ -43,6 +43,7 @@ class BaseStack(ABC):
              services: List[str] = [],
              _pipe: bool = False,
              _check: bool = True,
+              _env: Optional[Dict[str, str]] = None,
              **kwargs) -> subprocess.CompletedProcess:
         pass
 
@@ -183,11 +184,13 @@ class ComposeStack(BaseStack):
              services: List[str] = [],
              _pipe: bool = False,
              _check: bool = True,
+              _env: Optional[Dict[str, str]] = None,
              **kwargs) -> subprocess.CompletedProcess:
         cmd = append_cmd_flags('docker-compose push', **kwargs)
         return self._run('%s %s' % (cmd, ' '.join(services)),
                          pipe=_pipe,
-                         check=_check)
+                         check=_check,
+                         env=_env)
 
     def up(self,
            services: List[str] = [],
@@ -395,11 +398,13 @@ class SwarmStack(BaseStack):
              services: List[str] = [],
              _pipe: bool = False,
              _check: bool = True,
+              _env: Optional[Dict[str, str]] = None,
              **kwargs) -> subprocess.CompletedProcess:
         cmd = append_cmd_flags('docker-compose push', **kwargs)
         return self._run('%s %s' % (cmd, ' '.join(services)),
                          pipe=_pipe,
-                         check=_check)
+                         check=_check,
+                         env=_env)
 
     def up(self,
            services: List[str] = [],
