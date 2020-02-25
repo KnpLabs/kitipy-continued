@@ -13,5 +13,8 @@ setuptools.setup(
         "requests>=2.23.0",
         "boto3>=1.12.5",
         "boto3-stubs[secretsmanager]>=*",
+        "boto3-stubs[ecs]>=*",
     ],
-)
+    dependency_links=[
+        'https://github.com/NiR-/container-transform/tarball/integration#egg=container-transform',
+    ])

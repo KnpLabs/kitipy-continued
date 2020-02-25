@@ -18,6 +18,6 @@ def ensure_is_right_account_id(expected: str):
     current = identity['Account']
 
     if current != expected:
-        raise RuntimeError(
-            ("You're not using the right AWS account. Current account: %s - " +
-             "Expected: %s") % (current, expected))
+        raise RuntimeError(("You're not using the right AWS account. " +
+                            "Current account: {current} - Expected: %s").format(
+                                current=current, expected=expected))
