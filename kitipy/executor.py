@@ -16,6 +16,10 @@ from .dispatcher import Dispatcher
 
 class BaseExecutor(ABC):
     @abstractmethod
+    def getcwd(self) -> str:
+        pass
+
+    @abstractmethod
     def local(
             self,
             cmd: str,
@@ -281,6 +285,9 @@ class Executor(BaseExecutor):
             self._sftp = self.ssh.open_sftp()
 
         return self._sftp
+
+    def getcwd(self) -> str:
+        return self._basedir
 
     def local(
             self,
@@ -719,6 +726,9 @@ class InteractiveWarningPolicy(paramiko.MissingHostKeyPolicy):
 class ProxyExecutor(BaseExecutor):
     def __init__(self, executor: BaseExecutor):
         self._executor = executor
+
+    def getcwd(self):
+        return self._executor.getcwd()
 
     def local(
             self,
