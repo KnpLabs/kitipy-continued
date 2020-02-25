@@ -136,7 +136,7 @@ class ComposeStack(BaseStack):
         if self._loaded:
             return
 
-        res = self._run('docker-compose config 2>/dev/null', pipe=True)
+        res = self._run('docker-compose config 2>/dev/null', pipe=True, env=self._env)
         self._config = yaml.safe_load(res.stdout)
         self._loaded = True
 
