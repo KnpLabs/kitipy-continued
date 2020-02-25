@@ -21,6 +21,11 @@ class BaseStack(ABC):
 
     @property
     @abstractmethod
+    def file(self):
+        pass
+
+    @property
+    @abstractmethod
     def config(self):
         pass
 
@@ -326,6 +331,10 @@ class SwarmStack(BaseStack):
         return self._name
 
     @property
+    def file(self):
+        return self._file
+
+    @property
     def config(self):
         self._load_config()
         return self._config
@@ -610,9 +619,9 @@ def _buildx_build_stack(
         args['args'] = tuple((k, v) for k, v in build_args.items())
         args['tag'] = service.get('image', "%s/%s:latest" % (stack.name, name))
         args['file'] = build.get('dockerfile', 'Dockerfile')
-        # Add jwargs at the end only so flags infered from compose config can
+        # Add kwargs at the end only so flags infered from compose config can
         # be overriden.
         args.update(kwargs)
 
         context = build.get('context', default_context)
-        buildx_build(context, **args)
+        buildx_build(context, _cwd=context, **args)

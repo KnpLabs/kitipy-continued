@@ -140,6 +140,7 @@ def buildx_imagetools_inspect(image: str,
 
 
 def buildx_build(context: str,
+                 _cwd: Optional[str] = None,
                  _pipe: bool = False,
                  _check: bool = True,
                  _env: Optional[Dict[str, str]] = None,
@@ -159,13 +160,17 @@ def buildx_build(context: str,
     Returns:
         :class:`subprocess.CompletedProcess`: When the process is successful.
     """
-    
+
     cmd = append_cmd_flags('docker buildx build', **kwargs)
-    env = _env or os.environ.copy()
+    env = _env if _env is not None else {}
     env.update({"DOCKER_BUILDKIT": "1", "DOCKER_CLI_EXPERIMENTAL": "enabled"})
-    
+
     exec = get_current_executor()
-    return exec.local(cmd + ' ' + context, pipe=_pipe, check=_check, env=env)
+    return exec.local(cmd + ' ' + context,
+                      cwd=_cwd,
+                      pipe=_pipe,
+                      check=_check,
+                      env=env)
 
 
 def container_ps(_pipe: bool = False,
