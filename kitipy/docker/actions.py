@@ -1,6 +1,6 @@
 import os
 import subprocess
-from ..context import Context, get_current_executor
+from ..context import Context, get_current_context, get_current_executor
 from ..utils import append_cmd_flags
 from typing import Any, Dict, List, Optional, Union
 
@@ -276,3 +276,10 @@ def find_service_label(kctx: Context,
 def find_default_shell(kctx: Context, service_name: str) -> Optional[str]:
     label = "io.kitipy.docker.default_shell"
     return kctx.stack.find_service_label(service_name, label, one=True)
+
+
+def registry_authenticate(server: str, username: str, password: str):
+    kctx = get_current_context()
+    cmd = "docker login --username={username} --password-stdin {server}".format(
+        username=username, server=server)
+    kctx.local(cmd, input=password)
