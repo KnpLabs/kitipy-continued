@@ -15,4 +15,4 @@ container-transform = {editable = true,git = "https://github.com/NiR-/container-
 boto3-stubs = {extras = ["ecr", "ecs", "secretsmanager"],version = "*"}
 
 [requires]
-python_version = "3.7"
+python_version = "3.8"
