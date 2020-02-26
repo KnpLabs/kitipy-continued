@@ -176,11 +176,11 @@ def upsert_service(client: mypy_boto3_ecs.ECSClient, cluster_name: str,
 
     existing = describe_service(client, cluster_name, service_name)
 
-    if existing["loadBalancers"] != service_def["loadBalancers"]:
+    if existing["loadBalancers"] != service_def.get("loadBalancers"):
         raise ServiceDefinitionChangedError(
             "The parameter loadBalancers has changed.")
 
-    if existing["serviceRegistries"] != service_def["serviceRegistries"]:
+    if existing["serviceRegistries"] != service_def.get("serviceRegistries"):
         raise ServiceDefinitionChangedError(
             "The parameter serviceRegistries has changed.")
 
