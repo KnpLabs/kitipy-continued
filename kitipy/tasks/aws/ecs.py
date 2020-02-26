@@ -100,7 +100,7 @@ def deploy(kctx: kitipy.Context, version: str):
     task_def["containerDefinitions"] = stack["ecs_container_transformer"](
         kctx, version)
 
-    task_def_tags = task_def["tags"] if task_def["tags"] in task_def else []
+    task_def_tags = task_def.get("tags", [])
     task_def_tags.append({'key': 'kitipy.image_tag', 'value': version})
 
     try:
@@ -160,7 +160,7 @@ def run(kctx: kitipy.Context, container: str, command: List[str],
     run_args = stack["ecs_service_definition"](kctx)
     task_def["containerDefinitions"] = containers
 
-    task_arn = kitipy.libs.aws.ecs.run_oneoff_task(client, cluster_name, task_name,
-                                               task_def, container, command,
-                                               run_args)
+    task_arn = kitipy.libs.aws.ecs.run_oneoff_task(client, cluster_name,
+                                                   task_name, task_def,
+                                                   container, command, run_args)
     kitipy.libs.aws.ecs.wait_until_task_stops(client, cluster_name, task_arn)

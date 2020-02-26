@@ -612,7 +612,14 @@ def _buildx_build_stack(
     services_cfg = stack.config.get('services', {})
 
     for name, service in services_cfg.items():
+        # If services is provided, only those services should be build
         if len(services) > 0 and name not in services:
+            continue
+
+        # Service without image and build parameters are ignored as they're
+        # either not build through the compose file and/or they can't be
+        # pushed.
+        if "image" not in service or "build" not in service:
             continue
 
         build = service.get('build', {})
