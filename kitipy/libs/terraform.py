@@ -1,8 +1,9 @@
+import functools
 import json
 import kitipy
 import os
 from .tfcloud import get_current_state_version_outputs
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Union
 
 
 def _get_token():
@@ -47,3 +48,32 @@ Args:
 Returns:
     Dict[str, Any]: The outputs of the last state version of the workspace.
 """
+
+
+def find_deep_output_value(
+        kctx: kitipy.Context,
+        path: List[str],
+        tf_outputs: Optional[dict] = None) -> Union[str, dict]:
+    """Find a specific value in terraform outputs by its path.
+
+    Args:
+        kctx (kitipy.Context):
+            The current kitipy context.
+        path (List[str]):
+            Name of the stage where the Terraform workspace ID is looked for. If
+            no stage name is passed, the name of the current stage is used.
+        outputs (Optional[dict]):
+            Terraform outputs where the path should be looked for. If no
+            outputs are provided, the output() function is called to retrieve
+            the outputs of the current stage.
+
+    Returns:
+        Union[str, dict]:
+            It returns either a string or a dict of values, depending on the
+            terraform value.
+    """
+    if tf_outputs is None:
+        tf_outputs = output(kctx)
+
+    return functools.reduce(lambda outputs, path: outputs[path], path,
+                            tf_outputs)
