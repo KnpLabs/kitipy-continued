@@ -7,6 +7,9 @@ from typing import Any, Dict, List, Optional, Union
 
 
 def _get_token():
+    if "TFCLOUD_API_TOKEN" not in os.environ:
+        raise RuntimeError("Env var TFCLOUD_API_TOKEN is not defined.")
+
     return os.getenv("TFCLOUD_API_TOKEN")
 
 
