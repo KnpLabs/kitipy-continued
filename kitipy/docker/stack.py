@@ -142,7 +142,8 @@ class ComposeStack(BaseStack):
         if self._loaded:
             return
 
-        res = self._run('docker-compose config 2>/dev/null', pipe=True, env=self._env)
+        cmd = "docker-compose -f {file} config 2>/dev/null".format(file=self._file)
+        res = self._run(cmd, pipe=True, env=self._env)
         self._config = yaml.safe_load(res.stdout)
         self._loaded = True
 
@@ -346,7 +347,8 @@ class SwarmStack(BaseStack):
         if self._loaded:
             return
 
-        res = self._run('docker-compose config', pipe=True)
+        cmd = "docker-compose -f {file} config 2>/dev/null".format(file=self._file)
+        res = self._run(cmd, pipe=True, env=self._env)
         self._config = yaml.safe_load(res.stdout)
         self._loaded = True
 
