@@ -93,7 +93,7 @@ def deploy(kctx: kitipy.Context, version: str):
     client = kitipy.libs.aws.ecs.new_client()
     stack = kctx.config["stacks"][kctx.stack.name]
     cluster_name = kctx.stage["ecs_cluster_name"]
-    service_name = "%s-%d" % (kctx.stack.name, stack["ecs_service_version"])
+    service_name = "%s-v%d" % (kctx.stack.name, stack["ecs_service_version"])
 
     service_def = stack["ecs_service_definition"](kctx)
     task_def = stack["ecs_task_definition"](kctx)
