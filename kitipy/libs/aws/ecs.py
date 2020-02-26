@@ -10,7 +10,7 @@ import kitipy
 import mypy_boto3_ecs
 import time
 from container_transform.converter import Converter  # type: ignore
-from typing import Dict, Generator, List, Optional, Tuple, TypedDict
+from typing import Callable, Dict, Generator, List, Optional, Tuple, TypedDict
 
 
 def convert_compose_to_ecs_config(compose_file: str) -> dict:
@@ -193,6 +193,50 @@ def upsert_service(client: mypy_boto3_ecs.ECSClient, cluster_name: str,
     return resp["service"]["deployments"][0]["id"]
 
 
+def run_oneoff_task(client: mypy_boto3_ecs.ECSClient, cluster_name: str,
+                    task_name: str, task_def: dict, container: str,
+                    command: List[str], run_args: dict) -> str:
+    """Run a specific command in a oneoff ECS task.
+
+    Args:
+        client (mypy_boto3_ecs.ECSClient):
+            An ECS API client.
+        cluster_name (str):
+            The name of the cluster where the task should run.
+        task_name (str):
+            The name of the task to create.
+        task_def (dict):
+            The task definition to register and deploy. See https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html.
+        container (str):
+            The name of the container where the command should run.
+        command (List[str]):
+            The shell command to run in the container.
+        run_args (dict):
+            The list of arguments to pass to run_task(). See https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ecs.html#ECS.Client.run_task.
+
+    Returns:
+        str: The ARN of the task.
+    """
+    # @TODO: use a proper logger
+    kctx = kitipy.get_current_context()
+
+    task_def_id = register_task_definition(client, task_def)
+
+    run_args["cluster"] = cluster_name
+    run_args["group"] = task_name
+    run_args["taskDefinition"] = task_def_id
+    run_args["count"] = 1
+    run_args["overrides"] = {
+        "containerOverrides": [{
+            "name": container,
+            "command": command
+        }]
+    }
+
+    resp = client.run_task(**run_args)
+    return resp["tasks"][0]["taskArn"]
+
+
 def describe_service(
     client: mypy_boto3_ecs.ECSClient, cluster_name: str, service_name: str
 ) -> mypy_boto3_ecs.type_defs.ClientDescribeServicesResponseservicesTypeDef:
@@ -288,7 +332,10 @@ def find_service_deployment(
     client: mypy_boto3_ecs.ECSClient,
     cluster_name: str,
     service_name: str,
-    deployment_id: str,
+    filter_fn: Callable[[
+        mypy_boto3_ecs.type_defs.
+        ClientDescribeServicesResponseservicesdeploymentsTypeDef
+    ], bool],
 ) -> Optional[mypy_boto3_ecs.type_defs.
               ClientDescribeServicesResponseservicesdeploymentsTypeDef]:
     """Find a specific deployment for a given service.
@@ -300,8 +347,11 @@ def find_service_deployment(
             The name of the cluster where the service run.
         service_name (str):
             The name of the deployed service.
-        deployment_id (str):
-            The ID of the deployment to look for.
+        filter_fn (Callable[[
+            mypy_boto3_ecs.type_defs.
+            ClientDescribeServicesResponseservicesdeploymentsTypeDef
+        ], bool]):
+            The function called to find the desired deployment.
 
     Returns:
         Optional[mypy_boto3_ecs.type_defs.
@@ -313,10 +363,46 @@ def find_service_deployment(
         RuntimeError: When more than 1 service have been returned by ECS API.
     """
     deployments = find_service_deployments(client, cluster_name, service_name)
-    deployment = next((d for d in deployments if d["id"] == deployment_id),
-                      None)
+    deployment = next((d for d in deployments if filter_fn(d)), None)
 
     return deployment
+
+
+def get_primary_service_deployment(
+    client: mypy_boto3_ecs.ECSClient, cluster_name: str, service_name: str
+) -> mypy_boto3_ecs.type_defs.ClientDescribeServicesResponseservicesdeploymentsTypeDef:
+    """Find the deployment with PRIMARY status for a given service.
+
+    Args:
+        client (mypy_boto3_ecs.ECSClient):
+            An ECS API client.
+        cluster_name (str):
+            The name of the cluster where the service run.
+        service_name (str):
+            The name of the deployed service.
+
+    Returns:
+        mypy_boto3_ecs.type_defs.ClientDescribeServiceResponseservicedeploymentsTypeDef:
+            The service deployment if found, None otherwise.
+
+    Raises:
+        ServiceNotFoundError:
+            When no matching service was found.
+        RuntimeError:
+            When more than 1 service have been returned by ECS API.
+        DeploymentNotFoundError:
+            When no deployment with status PRIMARY is found for the given
+            service.
+    """
+    d = find_service_deployment(client, cluster_name, service_name,
+                                lambda d: d["status"] == "PRIMARY")
+
+    if d is None:
+        raise DeploymentNotFoundError(
+            "Primary deployment not found for service {service}.".format(
+                service=service_name))
+
+    return d
 
 
 def find_service_arn(client: mypy_boto3_ecs.ECSClient, cluster_name: str,
@@ -383,7 +469,7 @@ def watch_deployment(
 
     while attempts < max_attempts:
         deployment = find_service_deployment(client, cluster_name, service_name,
-                                             deployment_id)
+                                             lambda d: d["id"] == deployment_id)
 
         if deployment is None:
             raise DeploymentNotFoundError(
@@ -413,3 +499,46 @@ def watch_deployment(
     raise RuntimeError(
         "watch_deployment timed out before the deployment was completed. It is probably broken."
     )
+
+
+def wait_until_task_stops(client: mypy_boto3_ecs.ECSClient, cluster_name: str,
+                          task_arn: str):
+    """Wait until the given task reach STOPPED state.
+
+    Args:
+        client (mypy_boto3_ecs.ECSClient):
+            An ECS API client.
+        cluster_name (str):
+            The name of the cluster where the task run.
+        task_arn (str):
+            The ARN of the ECS task to watch.
+    """
+
+    waiter = client.get_waiter('tasks_stopped')
+    waiter.wait(cluster=cluster_name,
+                tasks=[task_arn],
+                WaiterConfig={
+                    'Delay': 5,
+                    'MaxAttempts': 120,
+                })
+
+
+def get_task_definition(
+    client: mypy_boto3_ecs.ECSClient, task_def_id: str
+) -> mypy_boto3_ecs.type_defs.ClientDescribeTaskDefinitionResponseTypeDef:
+    """Describe a given task definition.
+
+    Args:
+        client (mypy_boto3_ecs.ECSClient):
+            An ECS API client.
+        task_def_id (str):
+            The task definition to retrieve. This could be either just a family
+            name or a specific revision, in the format "family:revision". In
+            the former case, the latest ACTIVE definition is used.
+
+    Returns:
+        mypy_boto3_ecs.type_defs.ClientDescribeTaskDefinitionResponseTypeDef:
+            The task definition.
+    """
+    return client.describe_task_definition(taskDefinition=task_def_id,
+                                           include=['TAGS'])

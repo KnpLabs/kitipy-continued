@@ -19,6 +19,12 @@ Also, it expects following stack parameters:
     The second argument passed to the callable is the image tag set through the
     CLI argument or via the IMAGE_TAG env var ;
 
+* `ecs_oneoff_container_transformer` (Callable[[kitipy.Context, dict, string], dict]):
+    A function returning the containers to put in the task definition when
+    running oneoff tasks. It takes the current kitipy Context, the list of
+    containers as returned by `ecs_container_transformer` and the target
+    container where the command will run (as specified via CLI arg).
+
 * `ecs_service_definition` (Callable[[kitipy.Context], dict]):
     A function returning the ECS service definition. See https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ecs.html#ECS.Client.create_service ;
 
@@ -71,15 +77,16 @@ config = {
 
 import click
 import kitipy
+from typing import List, Optional
 
 
-@kitipy.group()
-def ecs():
+@kitipy.group(name="ecs")
+def task_group():
     """Manage API stack on AWS infra."""
     pass
 
 
-@ecs.task()
+@task_group.task()
 @click.argument("version", nargs=1, type=str, envvar="IMAGE_TAG")
 def deploy(kctx: kitipy.Context, version: str):
     """Deploy a given version to ECS."""
@@ -92,6 +99,9 @@ def deploy(kctx: kitipy.Context, version: str):
     task_def = stack["ecs_task_definition"](kctx)
     task_def["containerDefinitions"] = stack["ecs_container_transformer"](
         kctx, version)
+
+    task_def_tags = task_def["tags"] if task_def["tags"] in task_def else []
+    task_def_tags.append({'key': 'kitipy.image_tag', 'value': version})
 
     try:
         deployment_id = kitipy.libs.aws.ecs.upsert_service(
@@ -108,3 +118,49 @@ def deploy(kctx: kitipy.Context, version: str):
         message = event["message"]
         kctx.info("[{createdAt}] {message}".format(createdAt=createdAt,
                                                    message=message))
+
+
+@task_group.task()
+@click.option(
+    "--version",
+    nargs=1,
+    type=str,
+    envvar="IMAGE_TAG",
+    help="The version of the current ECS deployment is reused when not specfied."
+)
+@click.argument("container", nargs=1, type=str)
+@click.argument("command", nargs=-1, type=str)
+def run(kctx: kitipy.Context, container: str, command: List[str],
+        version: Optional[str]):
+    """Run a given command in a oneoff task."""
+    client = kitipy.libs.aws.ecs.new_client()
+    stack = kctx.config["stacks"][kctx.stack.name]
+    cluster_name = kctx.stage["ecs_cluster_name"]
+    service_name = "%s-%d" % (kctx.stack.name, stack["ecs_service_version"])
+    task_def = stack["ecs_task_definition"](kctx)
+
+    if version is None:
+        regular_task_def = kitipy.libs.aws.ecs.get_task_definition(
+            client, task_def["family"])
+        version = next((tag["value"]
+                        for tag in regular_task_def["tags"]
+                        if tag["key"] == "kitipy.image_tag"), None)
+
+    if version is None:
+        kctx.fail(
+            "No --version flag was provided and no deployments have been found."
+        )
+
+    task_name = "-".join(command)
+
+    containers = stack["ecs_container_transformer"](kctx, version)
+    containers = stack["ecs_oneoff_container_transformer"](kctx, containers,
+                                                           container)
+
+    run_args = stack["ecs_service_definition"](kctx)
+    task_def["containerDefinitions"] = containers
+
+    task_arn = kitipy.libs.aws.ecs.run_oneoff_task(client, cluster_name, task_name,
+                                               task_def, container, command,
+                                               run_args)
+    kitipy.libs.aws.ecs.wait_until_task_stops(client, cluster_name, task_arn)
