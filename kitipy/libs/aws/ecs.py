@@ -10,7 +10,7 @@ import kitipy
 import mypy_boto3_ecs
 import time
 from container_transform.converter import Converter  # type: ignore
-from typing import Dict, Generator, List, Optional, Tuple
+from typing import Dict, Generator, List, Optional, Tuple, TypedDict
 
 
 def convert_compose_to_ecs_config(compose_file: str) -> dict:
@@ -25,7 +25,8 @@ def convert_compose_to_ecs_config(compose_file: str) -> dict:
     converter = Converter(filename=compose_file,
                           input_type="compose",
                           output_type="ecs")
-    return json.loads(converter.convert())
+    converted = json.loads(converter.convert())
+    return converted["containerDefinitions"]
 
 
 def set_image_tag(containers: List[dict],
@@ -62,15 +63,12 @@ def set_readonly_fs(containers: List[dict]) -> List[dict]:
     return [dict(c, readonlyRootFilesystem=True) for c in containers]
 
 
-def add_secrets(containers):
+def add_secrets(containers: List[dict], secrets: dict) -> List[dict]:
     kctx = kitipy.get_current_context()
     by_name = {c["name"]: c for c in containers}
-    stack = kctx.config["stacks"][kctx.stack.name]
-    secrets = stack["secrets"] if "secrets" in stack else {}
 
-    for cname, secrets_fn in secrets.items():
-        secrets = secrets_fn(kctx.stage["name"])
-        by_name[cname].update({"secrets": secrets})
+    for container, container_secrets in secrets.items():
+        by_name[container].update({"secrets": container_secrets})
 
     return list(by_name.values())
 
@@ -166,7 +164,8 @@ def upsert_service(client: mypy_boto3_ecs.ECSClient, cluster_name: str,
     task_def_id = register_task_definition(client, task_def)
 
     service_def["cluster"] = cluster_name
-    service_def["service"] = service_name
+    service_def["serviceName"] = service_name
+    service_def["taskDefinition"] = task_def_id
 
     if find_service_arn(client, cluster_name, service_name) is None:
         kctx.info(("Creating service {service} " +
