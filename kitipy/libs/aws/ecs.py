@@ -5,12 +5,30 @@ definitions. Whereas the second part is a group of wrappers around boto3 SDK.
 
 import boto3
 import datetime
+import enum
 import json
 import kitipy
 import mypy_boto3_ecs
 import time
 from container_transform.converter import Converter  # type: ignore
-from typing import Callable, Dict, Generator, List, Optional, Tuple, TypedDict
+from typing import Callable, Dict, Generator, List, Literal, Optional, Tuple, TypedDict, Union
+
+# Following list contains all the fields supported by create_service() but not
+# by update_service().
+create_update_diff = [
+    'launchType',
+    'assignPublicIp',
+    'clientToken',
+    'deploymentController',
+    'enableECSManagedTags',
+    'loadBalancers',
+    'placementConstraints',
+    'placementStrategy',
+    'propagateTags',
+    'serviceName',
+    'serviceRegistries',
+    'tags',
+]
 
 
 def convert_compose_to_ecs_config(compose_file: str) -> dict:
@@ -176,13 +194,22 @@ def upsert_service(client: mypy_boto3_ecs.ECSClient, cluster_name: str,
 
     existing = describe_service(client, cluster_name, service_name)
 
-    if existing["loadBalancers"] != service_def.get("loadBalancers"):
+    if existing["loadBalancers"] != service_def.get("loadBalancers", []):
         raise ServiceDefinitionChangedError(
             "The parameter loadBalancers has changed.")
 
-    if existing["serviceRegistries"] != service_def.get("serviceRegistries"):
+    if existing["serviceRegistries"] != service_def.get("serviceRegistries",
+                                                        []):
+        # @TODO: add previous/current values to the exception
         raise ServiceDefinitionChangedError(
             "The parameter serviceRegistries has changed.")
+
+    # Remvoe all the params that are supported by create_service but not by
+    # update_service.
+    service_def["service"] = service_def["serviceName"]
+    service_def = {
+        k: v for k, v in service_def.items() if k not in create_update_diff
+    }
 
     kctx.info(("Updating service {service} " + "in {cluster} cluster.").format(
         service=service_name, cluster=cluster_name))
@@ -542,3 +569,38 @@ def get_task_definition(
     """
     return client.describe_task_definition(taskDefinition=task_def_id,
                                            include=['TAGS'])
+
+
+TaskDesiredStatus = Union[Literal['RUNNING'], Literal['PENDING'],
+                          Literal['STOPPED']]
+
+
+class ListTasksFilters(TypedDict, total=False):
+    containerInstance: str
+    family: str
+    startedBy: str
+    serviceName: str
+    desiredStatus: List[TaskDesiredStatus]
+    launchType: str
+
+
+def list_tasks(
+    client: mypy_boto3_ecs.ECSClient, cluster_name: str,
+    filters: ListTasksFilters, max_results: int
+) -> Generator[mypy_boto3_ecs.type_defs.TaskTypeDef, None, None]:
+    for status in filters['desiredStatus']:
+        args = dict(filters)
+        args.update({
+            'desiredStatus': status,
+            'cluster': cluster_name,
+            'maxResults': max_results,
+        })
+
+        list_resp = client.list_tasks(**args)  # type: ignore
+        if len(list_resp['taskArns']) == 0:
+            continue
+
+        describe_resp = client.describe_tasks(tasks=list_resp['taskArns'],
+                                              cluster=cluster_name)
+
+        yield from describe_resp["tasks"]

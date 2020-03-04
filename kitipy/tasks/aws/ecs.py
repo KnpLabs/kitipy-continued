@@ -77,7 +77,11 @@ config = {
 
 import click
 import kitipy
+import mypy_boto3_ecs
 from typing import List, Optional
+
+versioned_service_name = lambda stack: "{name}-v{version}".format(
+    name=stack['name'], version=stack['ecs_service_version'])
 
 
 @kitipy.group(name="ecs")
@@ -93,7 +97,7 @@ def deploy(kctx: kitipy.Context, version: str):
     client = kitipy.libs.aws.ecs.new_client()
     stack = kctx.config["stacks"][kctx.stack.name]
     cluster_name = kctx.stage["ecs_cluster_name"]
-    service_name = "%s-v%d" % (kctx.stack.name, stack["ecs_service_version"])
+    service_name = versioned_service_name(stack)
 
     service_def = stack["ecs_service_definition"](kctx)
     task_def = stack["ecs_task_definition"](kctx)
@@ -106,10 +110,11 @@ def deploy(kctx: kitipy.Context, version: str):
     try:
         deployment_id = kitipy.libs.aws.ecs.upsert_service(
             client, cluster_name, service_name, task_def, service_def)
-    except kitipy.libs.aws.ecs.ServiceDefinitionChangedError:
-        kctx.fail("Could not deploy the API: ECS service definition has " +
-                  "changed. You have to increment the version number in the " +
-                  "./tasks.py file before re-running this command.")
+    except kitipy.libs.aws.ecs.ServiceDefinitionChangedError as err:
+        kctx.fail(
+            "Could not deploy the API: ECS service definition has " +
+            "changed - {0}. You have to increment the version ".format(err) +
+            "number in the ./tasks.py file before re-running this command.\n")
 
     for event in kitipy.libs.aws.ecs.watch_deployment(client, cluster_name,
                                                       service_name,
@@ -136,7 +141,7 @@ def run(kctx: kitipy.Context, container: str, command: List[str],
     client = kitipy.libs.aws.ecs.new_client()
     stack = kctx.config["stacks"][kctx.stack.name]
     cluster_name = kctx.stage["ecs_cluster_name"]
-    service_name = "%s-%d" % (kctx.stack.name, stack["ecs_service_version"])
+    service_name = versioned_service_name(stack)
     task_def = stack["ecs_task_definition"](kctx)
 
     if version is None:
@@ -151,16 +156,114 @@ def run(kctx: kitipy.Context, container: str, command: List[str],
             "No --version flag was provided and no deployments have been found."
         )
 
-    task_name = "-".join(command)
+    task_name = "{0}-{1}".format(service_name, "-".join(command))
 
     containers = stack["ecs_container_transformer"](kctx, version)
     containers = stack["ecs_oneoff_container_transformer"](kctx, containers,
                                                            container)
 
     run_args = stack["ecs_service_definition"](kctx)
+    run_args = {
+        k: v
+        for k, v in run_args.items()
+        if k not in ["desiredCount", "loadBalancers"]
+    }
+
+    task_def["family"] = task_def["family"] + "-oneoff"
     task_def["containerDefinitions"] = containers
 
     task_arn = kitipy.libs.aws.ecs.run_oneoff_task(client, cluster_name,
                                                    task_name, task_def,
                                                    container, command, run_args)
     kitipy.libs.aws.ecs.wait_until_task_stops(client, cluster_name, task_arn)
+
+
+@task_group.task()
+@click.option(
+    "--all",
+    type=bool,
+    is_flag=True,
+    help="Whether all tasks (running, pending and stopped) should be shown.")
+@click.option("--stopped",
+              type=bool,
+              is_flag=True,
+              help="Whether only stopped tasks should be shown.")
+@click.option("--oneoff",
+              type=bool,
+              is_flag=True,
+              help="Whether oneoff tasks should be shown.")
+def ps(kctx: kitipy.Context,
+       all: bool = False,
+       stopped: bool = False,
+       oneoff: bool = False):
+    client = kitipy.libs.aws.ecs.new_client()
+    stack = kctx.config["stacks"][kctx.stack.name]
+    cluster_name = kctx.stage["ecs_cluster_name"]
+    service_name = versioned_service_name(stack)
+
+    filters: kitipy.libs.aws.ecs.ListTasksFilters = {
+        'serviceName': service_name,
+        'desiredStatus': ['RUNNING', 'PENDING'],
+    }
+    if all:
+        filters['desiredStatus'].append('STOPPED')
+    if stopped:
+        filters['desiredStatus'] = ['STOPPED']
+    if oneoff:
+        task_def = stack["ecs_task_definition"](kctx)
+        filters['family'] = task_def["family"] + "-oneoff"
+        del filters['serviceName']
+
+    tasks = kitipy.libs.aws.ecs.list_tasks(client, cluster_name, filters, 10)
+
+    for task in tasks:
+        show_task(kctx, task)
+
+
+def show_task(kctx: kitipy.Context, task: mypy_boto3_ecs.type_defs.TaskTypeDef):
+    kctx.echo("=================================")
+    kctx.echo("Task ID: {0}".format(task_id_from_arn(task["taskArn"])))
+    kctx.echo("Task definition: {0}".format(
+        task_def_from_arn(task["taskDefinitionArn"])))
+    kctx.echo("CPU / Memory: {0} / {1}".format(task["cpu"], task["memory"]))
+    kctx.echo("Last status / Desired status: {0} / {1}".format(
+        task["lastStatus"], task["desiredStatus"]))
+
+    if task["lastStatus"] == "RUNNING":
+        kctx.echo("Started at: {0}".format(task["startedAt"].isoformat()))
+
+    if task["lastStatus"] == "STOPPED":
+        kctx.echo("Stopped at: {0}".format(task["stoppedAt"].isoformat()))
+        kctx.echo("Reason: {0}".format(task["stoppedReason"]))
+        show_failed_containers(kctx, task)
+
+    kctx.echo("")  # Put an empty line between each task
+
+
+def show_failed_containers(kctx: kitipy.Context,
+                           task: mypy_boto3_ecs.type_defs.TaskTypeDef):
+    containers = list(filter(lambda c: c["exitCode"] > 0, task["containers"]))
+
+    if len(containers) == 0:
+        kctx.echo("Containers with nonzero exit code: (None)")
+        return
+
+    kctx.echo("Containers with nonzero exit code:")
+    for container in task["containers"]:
+        if container["exitCode"] == 0:
+            continue
+
+        reason = "exit code: {0}".format(container["exitCode"]) + (
+            " - " + container['reason'] if 'reason' in container else '')
+        kctx.echo("  * {name}: {reason}".format(name=container["name"],
+                                                reason=reason))
+
+
+def task_id_from_arn(arn: str) -> str:
+    parts = arn.split('/')
+    return parts[1]
+
+
+def task_def_from_arn(arn: str) -> str:
+    parts = arn.split('/')
+    return parts[1]
