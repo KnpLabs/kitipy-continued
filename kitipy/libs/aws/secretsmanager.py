@@ -8,7 +8,7 @@ used in kitipy tasks.
 
 import kitipy
 import boto3
-from mypy_boto3_secretsmanager.client import SecretsManagerClient, ClientGetSecretValueResponseTypeDef
+from mypy_boto3_secretsmanager.client import SecretsManagerClient, GetSecretValueResponseTypeDef
 
 
 def new_client() -> SecretsManagerClient:
@@ -29,7 +29,7 @@ def describe_secret_with_current_value(client: SecretsManagerClient,
     """
     secret = client.describe_secret(SecretId=secret_id)
 
-    value: ClientGetSecretValueResponseTypeDef = {'SecretString': ''}
+    value: GetSecretValueResponseTypeDef = {'SecretString': ''}
     try:
         value = client.get_secret_value(SecretId=secret_id)
     except client.exceptions.ResourceNotFoundException:

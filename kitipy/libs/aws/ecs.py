@@ -265,8 +265,8 @@ def run_oneoff_task(client: mypy_boto3_ecs.ECSClient, cluster_name: str,
 
 
 def describe_service(
-    client: mypy_boto3_ecs.ECSClient, cluster_name: str, service_name: str
-) -> mypy_boto3_ecs.type_defs.ClientDescribeServicesResponseservicesTypeDef:
+        client: mypy_boto3_ecs.ECSClient, cluster_name: str,
+        service_name: str) -> mypy_boto3_ecs.type_defs.ServiceTypeDef:
     """Find the given service in the given cluster.
 
     Args:
@@ -278,7 +278,7 @@ def describe_service(
             The name of the service to look for.
     
     Returns:
-        mypy_boto3_ecs.type_defs.ClientDescribeServicesResponseservicesTypeDef:
+        mypy_boto3_ecs.type_defs.ServiceTypeDef:
             The selected service.
 
     Raises:
@@ -301,8 +301,7 @@ def describe_service(
 
 def list_service_events(
     client: mypy_boto3_ecs.ECSClient, cluster_name: str, service_name: str
-) -> List[mypy_boto3_ecs.type_defs.
-          ClientDescribeServicesResponseserviceseventsTypeDef]:
+) -> List[mypy_boto3_ecs.type_defs.ServiceEventTypeDef]:
     """List the ECS events for a given service.
 
     Args:
@@ -315,7 +314,7 @@ def list_service_events(
 
     Returns:
         List[mypy_boto3_ecs.type_defs.
-             ClientDescribeServicesResponseserviceseventsTypeDef]:
+             ServiceEventTypeDef]:
             List of ECS events for the selected service.
 
     Raises:
@@ -327,11 +326,10 @@ def list_service_events(
 
 
 def find_service_deployments(
-    client: mypy_boto3_ecs.ECSClient,
-    cluster_name: str,
-    service_name: str,
-) -> List[mypy_boto3_ecs.type_defs.
-          ClientDescribeServicesResponseservicesdeploymentsTypeDef]:
+        client: mypy_boto3_ecs.ECSClient,
+        cluster_name: str,
+        service_name: str,
+) -> List[mypy_boto3_ecs.type_defs.DeploymentTypeDef]:
     """List the deployments for a given service.
 
     Args:
@@ -359,12 +357,8 @@ def find_service_deployment(
     client: mypy_boto3_ecs.ECSClient,
     cluster_name: str,
     service_name: str,
-    filter_fn: Callable[[
-        mypy_boto3_ecs.type_defs.
-        ClientDescribeServicesResponseservicesdeploymentsTypeDef
-    ], bool],
-) -> Optional[mypy_boto3_ecs.type_defs.
-              ClientDescribeServicesResponseservicesdeploymentsTypeDef]:
+    filter_fn: Callable[[mypy_boto3_ecs.type_defs.DeploymentTypeDef], bool],
+) -> Optional[mypy_boto3_ecs.type_defs.DeploymentTypeDef]:
     """Find a specific deployment for a given service.
 
     Args:
@@ -376,7 +370,7 @@ def find_service_deployment(
             The name of the deployed service.
         filter_fn (Callable[[
             mypy_boto3_ecs.type_defs.
-            ClientDescribeServicesResponseservicesdeploymentsTypeDef
+            DeploymentTypeDef
         ], bool]):
             The function called to find the desired deployment.
 
@@ -396,8 +390,8 @@ def find_service_deployment(
 
 
 def get_primary_service_deployment(
-    client: mypy_boto3_ecs.ECSClient, cluster_name: str, service_name: str
-) -> mypy_boto3_ecs.type_defs.ClientDescribeServicesResponseservicesdeploymentsTypeDef:
+        client: mypy_boto3_ecs.ECSClient, cluster_name: str,
+        service_name: str) -> mypy_boto3_ecs.type_defs.DeploymentTypeDef:
     """Find the deployment with PRIMARY status for a given service.
 
     Args:
@@ -463,8 +457,7 @@ def watch_deployment(
     service_name: str,
     deployment_id: str,
     max_attempts: int = 120,
-) -> Generator[mypy_boto3_ecs.type_defs.
-               ClientDescribeServicesResponseserviceseventsTypeDef, None, None]:
+) -> Generator[mypy_boto3_ecs.type_defs.ServiceEventTypeDef, None, None]:
     """Wait until a service deployment is complete and stream ECS events.
 
     This function polls the ECS API every 5s until the given deployment has
@@ -552,7 +545,7 @@ def wait_until_task_stops(client: mypy_boto3_ecs.ECSClient, cluster_name: str,
 
 def get_task_definition(
     client: mypy_boto3_ecs.ECSClient, task_def_id: str
-) -> mypy_boto3_ecs.type_defs.ClientDescribeTaskDefinitionResponseTypeDef:
+) -> mypy_boto3_ecs.type_defs.DescribeTaskDefinitionResponseTypeDef:
     """Describe a given task definition.
 
     Args:
@@ -564,7 +557,7 @@ def get_task_definition(
             the former case, the latest ACTIVE definition is used.
 
     Returns:
-        mypy_boto3_ecs.type_defs.ClientDescribeTaskDefinitionResponseTypeDef:
+        mypy_boto3_ecs.type_defs.DescribeTaskDefinitionResponseTypeDef:
             The task definition.
     """
     return client.describe_task_definition(taskDefinition=task_def_id,
