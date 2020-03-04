@@ -106,6 +106,7 @@ def deploy(kctx: kitipy.Context, version: str):
 
     task_def_tags = task_def.get("tags", [])
     task_def_tags.append({'key': 'kitipy.image_tag', 'value': version})
+    task_def["tags"] = task_def_tags
 
     try:
         deployment_id = kitipy.libs.aws.ecs.upsert_service(
