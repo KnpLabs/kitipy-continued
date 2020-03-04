@@ -261,7 +261,10 @@ def run_oneoff_task(client: mypy_boto3_ecs.ECSClient, cluster_name: str,
     }
 
     resp = client.run_task(**run_args)
-    return resp["tasks"][0]["taskArn"]
+    task_arn = resp["tasks"][0]["taskArn"]
+    kctx.info("A new oneoff task {0} has been scheduled.".format(task_arn))
+
+    return task_arn
 
 
 def describe_service(
