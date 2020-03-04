@@ -176,7 +176,10 @@ def run(kctx: kitipy.Context, container: str, command: List[str],
     task_arn = kitipy.libs.aws.ecs.run_oneoff_task(client, cluster_name,
                                                    task_name, task_def,
                                                    container, command, run_args)
-    kitipy.libs.aws.ecs.wait_until_task_stops(client, cluster_name, task_arn)
+
+    task = kitipy.libs.aws.ecs.wait_until_task_stops(client, cluster_name,
+                                                     task_arn)
+    show_task(kctx, task)
 
 
 @task_group.task()
@@ -216,7 +219,6 @@ def ps(kctx: kitipy.Context,
         del filters['serviceName']
 
     tasks = kitipy.libs.aws.ecs.list_tasks(client, cluster_name, filters, 10)
-
     for task in tasks:
         show_task(kctx, task)
 

@@ -524,8 +524,9 @@ def watch_deployment(
     )
 
 
-def wait_until_task_stops(client: mypy_boto3_ecs.ECSClient, cluster_name: str,
-                          task_arn: str):
+def wait_until_task_stops(
+        client: mypy_boto3_ecs.ECSClient, cluster_name: str,
+        task_arn: str) -> mypy_boto3_ecs.type_defs.TaskTypeDef:
     """Wait until the given task reach STOPPED state.
 
     Args:
@@ -544,6 +545,9 @@ def wait_until_task_stops(client: mypy_boto3_ecs.ECSClient, cluster_name: str,
                     'Delay': 5,
                     'MaxAttempts': 120,
                 })
+
+    tasks = client.describe_tasks(tasks=[task_arn], cluster=cluster_name)
+    return tasks['tasks'][0]
 
 
 def get_task_definition(
