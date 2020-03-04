@@ -21,11 +21,17 @@ class BaseStack(ABC):
 
     @property
     @abstractmethod
+    def file(self):
+        pass
+
+    @property
+    @abstractmethod
     def config(self):
         pass
 
     @abstractmethod
-    def build(self, services: List[str] = [],
+    def build(self,
+              services: List[str] = [],
               **kwargs) -> subprocess.CompletedProcess:
         pass
 
@@ -38,11 +44,13 @@ class BaseStack(ABC):
              services: List[str] = [],
              _pipe: bool = False,
              _check: bool = True,
+             _env: Optional[Dict[str, str]] = None,
              **kwargs) -> subprocess.CompletedProcess:
         pass
 
     @abstractmethod
-    def up(self, services: List[str] = [],
+    def up(self,
+           services: List[str] = [],
            **kwargs) -> subprocess.CompletedProcess:
         pass
 
@@ -75,7 +83,8 @@ class BaseStack(ABC):
         pass
 
     @abstractmethod
-    def logs(self, services: List[str] = [],
+    def logs(self,
+             services: List[str] = [],
              **kwargs) -> subprocess.CompletedProcess:
         pass
 
@@ -90,7 +99,9 @@ class BaseStack(ABC):
         pass
 
     @abstractmethod
-    def inspect(self, service: str, replica_id: int = 1,
+    def inspect(self,
+                service: str,
+                replica_id: int = 1,
                 **kwargs) -> subprocess.CompletedProcess:
         pass
 
@@ -136,7 +147,9 @@ class ComposeStack(BaseStack):
         if self._loaded:
             return
 
-        res = self._run('docker-compose config 2>/dev/null', pipe=True)
+        cmd = "docker-compose -f {file} config 2>/dev/null".format(
+            file=self._file)
+        res = self._run(cmd, pipe=True, env=self._env)
         self._config = yaml.safe_load(res.stdout)
         self._loaded = True
 
@@ -178,11 +191,13 @@ class ComposeStack(BaseStack):
              services: List[str] = [],
              _pipe: bool = False,
              _check: bool = True,
+             _env: Optional[Dict[str, str]] = None,
              **kwargs) -> subprocess.CompletedProcess:
         cmd = append_cmd_flags('docker-compose push', **kwargs)
         return self._run('%s %s' % (cmd, ' '.join(services)),
                          pipe=_pipe,
-                         check=_check)
+                         check=_check,
+                         env=_env)
 
     def up(self,
            services: List[str] = [],
@@ -194,7 +209,9 @@ class ComposeStack(BaseStack):
                          pipe=_pipe,
                          check=_check)
 
-    def down(self, _pipe: bool = False, _check: bool = True,
+    def down(self,
+             _pipe: bool = False,
+             _check: bool = True,
              **kwargs) -> subprocess.CompletedProcess:
         cmd = append_cmd_flags('docker-compose down', **kwargs)
         return self._run(cmd, pipe=_pipe, check=_check)
@@ -326,6 +343,10 @@ class SwarmStack(BaseStack):
         return self._name
 
     @property
+    def file(self):
+        return self._file
+
+    @property
     def config(self):
         self._load_config()
         return self._config
@@ -334,7 +355,9 @@ class SwarmStack(BaseStack):
         if self._loaded:
             return
 
-        res = self._run('docker-compose config', pipe=True)
+        cmd = "docker-compose -f {file} config 2>/dev/null".format(
+            file=self._file)
+        res = self._run(cmd, pipe=True, env=self._env)
         self._config = yaml.safe_load(res.stdout)
         self._loaded = True
 
@@ -386,11 +409,13 @@ class SwarmStack(BaseStack):
              services: List[str] = [],
              _pipe: bool = False,
              _check: bool = True,
+             _env: Optional[Dict[str, str]] = None,
              **kwargs) -> subprocess.CompletedProcess:
         cmd = append_cmd_flags('docker-compose push', **kwargs)
         return self._run('%s %s' % (cmd, ' '.join(services)),
                          pipe=_pipe,
-                         check=_check)
+                         check=_check,
+                         env=_env)
 
     def up(self,
            services: List[str] = [],
@@ -403,7 +428,9 @@ class SwarmStack(BaseStack):
             'docker stack deploy -c %s ' % (self.config['file']), **kwargs)
         return self._run('%s %s' % (cmd, self.name), pipe=_pipe, check=_check)
 
-    def down(self, _pipe: bool = False, _check: bool = True,
+    def down(self,
+             _pipe: bool = False,
+             _check: bool = True,
              **kwargs) -> subprocess.CompletedProcess:
         cmd = append_cmd_flags('docker stack rm', **kwargs)
         return self._run('%s %s' % (cmd, self.name), pipe=_pipe, check=_check)
@@ -587,16 +614,23 @@ def load_stack(kctx: Context,
 
 
 def _buildx_build_stack(
-        executor: BaseExecutor,
-        stack: BaseStack,
-        services: List[str],
-        default_context: str,
-        **kwargs,
+    executor: BaseExecutor,
+    stack: BaseStack,
+    services: List[str],
+    default_context: str,
+    **kwargs,
 ):
     services_cfg = stack.config.get('services', {})
 
     for name, service in services_cfg.items():
+        # If services is provided, only those services should be build
         if len(services) > 0 and name not in services:
+            continue
+
+        # Service without image and build parameters are ignored as they're
+        # either not build through the compose file and/or they can't be
+        # pushed.
+        if "image" not in service or "build" not in service:
             continue
 
         build = service.get('build', {})
@@ -607,12 +641,13 @@ def _buildx_build_stack(
         args = {}
         args['target'] = build.get('target')
         args['label'] = tuple(build_labels)
-        args['args'] = tuple((k, v) for k, v in build_args.items())
+        args['build-arg'] = tuple(
+            "{0}={1}".format(k, v) for k, v in build_args.items())
         args['tag'] = service.get('image', "%s/%s:latest" % (stack.name, name))
         args['file'] = build.get('dockerfile', 'Dockerfile')
-        # Add jwargs at the end only so flags infered from compose config can
+        # Add kwargs at the end only so flags infered from compose config can
         # be overriden.
         args.update(kwargs)
 
         context = build.get('context', default_context)
-        buildx_build(context, **args)
+        buildx_build(context, _cwd=context, **args)

@@ -1,1 +1,1 @@
-from . import ecs, secretsmanager, sts
+from . import ecr, ecs, secretsmanager, sts

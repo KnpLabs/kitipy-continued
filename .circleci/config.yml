@@ -8,6 +8,7 @@ jobs:
     working_directory: ~/kitipy
     environment:
       PIPENV_VENV_IN_PROJECT: true
+      CI: true # This makes pipenv less verbose
     steps:
       - checkout
       - run:

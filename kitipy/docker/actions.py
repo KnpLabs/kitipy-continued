@@ -1,11 +1,12 @@
 import os
 import subprocess
-from ..context import Context, get_current_executor
+from ..context import Context, get_current_context, get_current_executor
 from ..utils import append_cmd_flags
 from typing import Any, Dict, List, Optional, Union
 
 
-def network_ls(_pipe: bool = False, _check: bool = True,
+def network_ls(_pipe: bool = False,
+               _check: bool = True,
                **kwargs) -> subprocess.CompletedProcess:
     """Run `docker network ls` through kitipy executor.
 
@@ -138,7 +139,12 @@ def buildx_imagetools_inspect(image: str,
     return exec.run("%s >/dev/null 2>&1" % (cmd), pipe=_pipe, check=_check)
 
 
-def buildx_build(context: str, **kwargs) -> subprocess.CompletedProcess:
+def buildx_build(context: str,
+                 _cwd: Optional[str] = None,
+                 _pipe: bool = False,
+                 _check: bool = True,
+                 _env: Optional[Dict[str, str]] = None,
+                 **kwargs) -> subprocess.CompletedProcess:
     """Run `docker buildx build` (equivalent to `docker build`) through kitipy
     executor. Supported by Docker +19.03.3.
 
@@ -154,14 +160,21 @@ def buildx_build(context: str, **kwargs) -> subprocess.CompletedProcess:
     Returns:
         :class:`subprocess.CompletedProcess`: When the process is successful.
     """
-    exec = get_current_executor()
+
     cmd = append_cmd_flags('docker buildx build', **kwargs)
-    env = os.environ.copy()
+    env = _env if _env is not None else {}
     env.update({"DOCKER_BUILDKIT": "1", "DOCKER_CLI_EXPERIMENTAL": "enabled"})
-    return exec.local(cmd + ' ' + context, env=env)
+
+    exec = get_current_executor()
+    return exec.local(cmd + ' ' + context,
+                      cwd=_cwd,
+                      pipe=_pipe,
+                      check=_check,
+                      env=env)
 
 
-def container_ps(_pipe: bool = False, _check: bool = True,
+def container_ps(_pipe: bool = False,
+                 _check: bool = True,
                  **kwargs) -> subprocess.CompletedProcess:
     """Run `docker container ps` (equivalent to `docker ps`) through kitipy
     executor.
@@ -263,3 +276,10 @@ def find_service_label(kctx: Context,
 def find_default_shell(kctx: Context, service_name: str) -> Optional[str]:
     label = "io.kitipy.docker.default_shell"
     return kctx.stack.find_service_label(service_name, label, one=True)
+
+
+def registry_authenticate(server: str, username: str, password: str):
+    kctx = get_current_context()
+    cmd = "docker login --username={username} --password-stdin {server}".format(
+        username=username, server=server)
+    kctx.local(cmd, input=password)
