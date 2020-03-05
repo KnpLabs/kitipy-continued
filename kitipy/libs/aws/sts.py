@@ -1,7 +1,7 @@
 import boto3
 
 
-def ensure_is_right_account_id(expected: str):
+def ensure_is_right_account(expected: str):
     """Check if the current AWS account id matches the given one.
 
     Args:
