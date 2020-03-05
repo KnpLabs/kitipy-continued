@@ -40,3 +40,21 @@ def invalidate(client: mypy_boto3_cloudfront.CloudFrontClient,
                                       InvalidationBatch=invalidation_batch)
 
     return resp['Invalidation']['Id']
+
+
+def wait_until_invalidation_completed(
+    client: mypy_boto3_cloudfront.CloudFrontClient, distribution_id: str,
+    invalidation_id: str):
+    """Wait until a CloudFront invalidation has completed.
+
+    Args:
+        client (mypy_boto3_cloudfront.CloudFront):
+            A CloudFront API client.
+        distribution_id (str):
+            The ID of the CloudFront distribution associated to the
+            invalidation to watch.
+        invalidation_id (str):
+            The ID of the CloudFront invalidation to watch.
+    """
+    waiter = client.get_waiter('invalidation_completed')
+    waiter.wait(DistributionId=distribution_id, Id=invalidation_id)
