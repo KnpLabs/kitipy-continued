@@ -5,12 +5,30 @@ definitions. Whereas the second part is a group of wrappers around boto3 SDK.
 
 import boto3
 import datetime
+import enum
 import json
 import kitipy
 import mypy_boto3_ecs
 import time
 from container_transform.converter import Converter  # type: ignore
-from typing import Callable, Dict, Generator, List, Optional, Tuple, TypedDict
+from typing import Callable, Dict, Generator, List, Literal, Optional, Tuple, TypedDict, Union
+
+# Following list contains all the fields supported by create_service() but not
+# by update_service().
+create_update_diff = [
+    'launchType',
+    'assignPublicIp',
+    'clientToken',
+    'deploymentController',
+    'enableECSManagedTags',
+    'loadBalancers',
+    'placementConstraints',
+    'placementStrategy',
+    'propagateTags',
+    'serviceName',
+    'serviceRegistries',
+    'tags',
+]
 
 
 def convert_compose_to_ecs_config(compose_file: str) -> dict:
@@ -176,13 +194,22 @@ def upsert_service(client: mypy_boto3_ecs.ECSClient, cluster_name: str,
 
     existing = describe_service(client, cluster_name, service_name)
 
-    if existing["loadBalancers"] != service_def.get("loadBalancers"):
+    if existing["loadBalancers"] != service_def.get("loadBalancers", []):
         raise ServiceDefinitionChangedError(
             "The parameter loadBalancers has changed.")
 
-    if existing["serviceRegistries"] != service_def.get("serviceRegistries"):
+    if existing["serviceRegistries"] != service_def.get("serviceRegistries",
+                                                        []):
+        # @TODO: add previous/current values to the exception
         raise ServiceDefinitionChangedError(
             "The parameter serviceRegistries has changed.")
+
+    # Remvoe all the params that are supported by create_service but not by
+    # update_service.
+    service_def["service"] = service_def["serviceName"]
+    service_def = {
+        k: v for k, v in service_def.items() if k not in create_update_diff
+    }
 
     kctx.info(("Updating service {service} " + "in {cluster} cluster.").format(
         service=service_name, cluster=cluster_name))
@@ -234,12 +261,15 @@ def run_oneoff_task(client: mypy_boto3_ecs.ECSClient, cluster_name: str,
     }
 
     resp = client.run_task(**run_args)
-    return resp["tasks"][0]["taskArn"]
+    task_arn = resp["tasks"][0]["taskArn"]
+    kctx.info("A new oneoff task {0} has been scheduled.".format(task_arn))
+
+    return task_arn
 
 
 def describe_service(
-    client: mypy_boto3_ecs.ECSClient, cluster_name: str, service_name: str
-) -> mypy_boto3_ecs.type_defs.ClientDescribeServicesResponseservicesTypeDef:
+        client: mypy_boto3_ecs.ECSClient, cluster_name: str,
+        service_name: str) -> mypy_boto3_ecs.type_defs.ServiceTypeDef:
     """Find the given service in the given cluster.
 
     Args:
@@ -251,7 +281,7 @@ def describe_service(
             The name of the service to look for.
     
     Returns:
-        mypy_boto3_ecs.type_defs.ClientDescribeServicesResponseservicesTypeDef:
+        mypy_boto3_ecs.type_defs.ServiceTypeDef:
             The selected service.
 
     Raises:
@@ -274,8 +304,7 @@ def describe_service(
 
 def list_service_events(
     client: mypy_boto3_ecs.ECSClient, cluster_name: str, service_name: str
-) -> List[mypy_boto3_ecs.type_defs.
-          ClientDescribeServicesResponseserviceseventsTypeDef]:
+) -> List[mypy_boto3_ecs.type_defs.ServiceEventTypeDef]:
     """List the ECS events for a given service.
 
     Args:
@@ -288,7 +317,7 @@ def list_service_events(
 
     Returns:
         List[mypy_boto3_ecs.type_defs.
-             ClientDescribeServicesResponseserviceseventsTypeDef]:
+             ServiceEventTypeDef]:
             List of ECS events for the selected service.
 
     Raises:
@@ -300,11 +329,10 @@ def list_service_events(
 
 
 def find_service_deployments(
-    client: mypy_boto3_ecs.ECSClient,
-    cluster_name: str,
-    service_name: str,
-) -> List[mypy_boto3_ecs.type_defs.
-          ClientDescribeServicesResponseservicesdeploymentsTypeDef]:
+        client: mypy_boto3_ecs.ECSClient,
+        cluster_name: str,
+        service_name: str,
+) -> List[mypy_boto3_ecs.type_defs.DeploymentTypeDef]:
     """List the deployments for a given service.
 
     Args:
@@ -332,12 +360,8 @@ def find_service_deployment(
     client: mypy_boto3_ecs.ECSClient,
     cluster_name: str,
     service_name: str,
-    filter_fn: Callable[[
-        mypy_boto3_ecs.type_defs.
-        ClientDescribeServicesResponseservicesdeploymentsTypeDef
-    ], bool],
-) -> Optional[mypy_boto3_ecs.type_defs.
-              ClientDescribeServicesResponseservicesdeploymentsTypeDef]:
+    filter_fn: Callable[[mypy_boto3_ecs.type_defs.DeploymentTypeDef], bool],
+) -> Optional[mypy_boto3_ecs.type_defs.DeploymentTypeDef]:
     """Find a specific deployment for a given service.
 
     Args:
@@ -349,7 +373,7 @@ def find_service_deployment(
             The name of the deployed service.
         filter_fn (Callable[[
             mypy_boto3_ecs.type_defs.
-            ClientDescribeServicesResponseservicesdeploymentsTypeDef
+            DeploymentTypeDef
         ], bool]):
             The function called to find the desired deployment.
 
@@ -369,8 +393,8 @@ def find_service_deployment(
 
 
 def get_primary_service_deployment(
-    client: mypy_boto3_ecs.ECSClient, cluster_name: str, service_name: str
-) -> mypy_boto3_ecs.type_defs.ClientDescribeServicesResponseservicesdeploymentsTypeDef:
+        client: mypy_boto3_ecs.ECSClient, cluster_name: str,
+        service_name: str) -> mypy_boto3_ecs.type_defs.DeploymentTypeDef:
     """Find the deployment with PRIMARY status for a given service.
 
     Args:
@@ -436,8 +460,7 @@ def watch_deployment(
     service_name: str,
     deployment_id: str,
     max_attempts: int = 120,
-) -> Generator[mypy_boto3_ecs.type_defs.
-               ClientDescribeServicesResponseserviceseventsTypeDef, None, None]:
+) -> Generator[mypy_boto3_ecs.type_defs.ServiceEventTypeDef, None, None]:
     """Wait until a service deployment is complete and stream ECS events.
 
     This function polls the ECS API every 5s until the given deployment has
@@ -501,8 +524,9 @@ def watch_deployment(
     )
 
 
-def wait_until_task_stops(client: mypy_boto3_ecs.ECSClient, cluster_name: str,
-                          task_arn: str):
+def wait_until_task_stops(
+        client: mypy_boto3_ecs.ECSClient, cluster_name: str,
+        task_arn: str) -> mypy_boto3_ecs.type_defs.TaskTypeDef:
     """Wait until the given task reach STOPPED state.
 
     Args:
@@ -522,10 +546,13 @@ def wait_until_task_stops(client: mypy_boto3_ecs.ECSClient, cluster_name: str,
                     'MaxAttempts': 120,
                 })
 
+    tasks = client.describe_tasks(tasks=[task_arn], cluster=cluster_name)
+    return tasks['tasks'][0]
+
 
 def get_task_definition(
     client: mypy_boto3_ecs.ECSClient, task_def_id: str
-) -> mypy_boto3_ecs.type_defs.ClientDescribeTaskDefinitionResponseTypeDef:
+) -> mypy_boto3_ecs.type_defs.DescribeTaskDefinitionResponseTypeDef:
     """Describe a given task definition.
 
     Args:
@@ -537,8 +564,43 @@ def get_task_definition(
             the former case, the latest ACTIVE definition is used.
 
     Returns:
-        mypy_boto3_ecs.type_defs.ClientDescribeTaskDefinitionResponseTypeDef:
+        mypy_boto3_ecs.type_defs.DescribeTaskDefinitionResponseTypeDef:
             The task definition.
     """
     return client.describe_task_definition(taskDefinition=task_def_id,
                                            include=['TAGS'])
+
+
+TaskDesiredStatus = Union[Literal['RUNNING'], Literal['PENDING'],
+                          Literal['STOPPED']]
+
+
+class ListTasksFilters(TypedDict, total=False):
+    containerInstance: str
+    family: str
+    startedBy: str
+    serviceName: str
+    desiredStatus: List[TaskDesiredStatus]
+    launchType: str
+
+
+def list_tasks(
+    client: mypy_boto3_ecs.ECSClient, cluster_name: str,
+    filters: ListTasksFilters, max_results: int
+) -> Generator[mypy_boto3_ecs.type_defs.TaskTypeDef, None, None]:
+    for status in filters['desiredStatus']:
+        args = dict(filters)
+        args.update({
+            'desiredStatus': status,
+            'cluster': cluster_name,
+            'maxResults': max_results,
+        })
+
+        list_resp = client.list_tasks(**args)  # type: ignore
+        if len(list_resp['taskArns']) == 0:
+            continue
+
+        describe_resp = client.describe_tasks(tasks=list_resp['taskArns'],
+                                              cluster=cluster_name)
+
+        yield from describe_resp["tasks"]
