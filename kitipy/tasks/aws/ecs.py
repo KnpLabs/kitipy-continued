@@ -171,7 +171,7 @@ def run(kctx: kitipy.Context, container: str, command: List[str],
     }
 
     task_def["family"] = task_def["family"] + "-oneoff"
-    task_def["containerDefinitions"] = containers
+    task_def["containerDefinitions"] = list(containers)
 
     task_arn = kitipy.libs.aws.ecs.run_oneoff_task(client, cluster_name,
                                                    task_name, task_def,
