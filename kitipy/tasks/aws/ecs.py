@@ -220,14 +220,25 @@ def ps(kctx: kitipy.Context,
 
     tasks = kitipy.libs.aws.ecs.list_tasks(client, cluster_name, filters, 10)
     for task in tasks:
-        show_task(kctx, task)
+        task_def = kitipy.libs.aws.ecs.get_task_definition(
+            client, task_def_from_arn(task["taskDefinitionArn"]))
+        image_tag = next((tag["value"]
+                          for tag in task_def["tags"]
+                          if tag["key"] == "kitipy.image_tag"), None)
+        show_task(kctx, task, image_tag)
 
 
-def show_task(kctx: kitipy.Context, task: mypy_boto3_ecs.type_defs.TaskTypeDef):
+def show_task(kctx: kitipy.Context,
+              task: mypy_boto3_ecs.type_defs.TaskTypeDef,
+              image_tag: Optional[str] = None):
     kctx.echo("=================================")
     kctx.echo("Task ID: {0}".format(task_id_from_arn(task["taskArn"])))
     kctx.echo("Task definition: {0}".format(
         task_def_from_arn(task["taskDefinitionArn"])))
+
+    if image_tag:
+        kctx.echo("Image tag: {0}".format(image_tag))
+
     kctx.echo("CPU / Memory: {0} / {1}".format(task["cpu"], task["memory"]))
     kctx.echo("Last status / Desired status: {0} / {1}".format(
         task["lastStatus"], task["desiredStatus"]))
