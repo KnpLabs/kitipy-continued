@@ -94,6 +94,10 @@ class BaseExecutor(ABC):
     def remote_cwd(self) -> Optional[str]:
         pass
 
+    @abstractmethod
+    def mkdir(self, path: str):
+        pass
+
 
 class Executor(BaseExecutor):
     """Executor provides a common abstraction to execute commands and
@@ -703,6 +707,13 @@ class Executor(BaseExecutor):
     def remote_cwd(self) -> Optional[str]:
         return self._remote_basedir
 
+    def mkdir(self, path: str):
+        if not os.path.isabs(path):
+            path = self._join_paths(self._remote_basedir, path)
+
+        res = self._remote("mkdir -p %s" % (path))
+        return res.stdout
+
 
 def _create_executor(config: Dict, stage_name: str,
                      dispatcher: Dispatcher) -> Executor:
@@ -810,6 +821,9 @@ class ProxyExecutor(BaseExecutor):
                 prefix: Optional[str] = None,
                 dir: Optional[str] = None) -> str:
         return self._executor.mkdtemp(suffix, prefix, dir)
+
+    def mkdir(self, path: str):
+        self._executor.mkdir(path)
 
     def cd(self, path: str):
         return self._executor.cd(path)
