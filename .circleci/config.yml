@@ -12,24 +12,31 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Prepare cached paths to be restored
+          name: Install Python 3.8.1
           command: |
-            sudo chown -R circleci:circleci /usr/local/bin
-            sudo chown -R circleci:circleci /usr/local/lib/python2.7/site-packages
+            set -o errexit -o xtrace
+            rm -rf /opt/circleci/.pyenv/
+            curl https://pyenv.run | bash
+            pyenv install --skip-existing 3.8.1
+            pyenv global 3.8.1
       - restore_cache:
-          key: deps9-{{ .Branch }}-{{ checksum "Pipfile" }}
+          key: v1-deps-cache-{{ checksum "Pipfile.lock" }}
       - run:
           name: Install dependencies
           command: |
             # Doesn't work with --user flag
-            sudo -H pip install pipenv
+            pip install pipenv
             pipenv install --dev
       - save_cache:
-          key: deps9-{{ .Branch }}-{{ checksum "Pipfile" }}
+          key: v1-deps-cache-{{ checksum "Pipfile.lock" }}
           paths:
-            - .venv
-            - /usr/local/lib/python2.7/site-packages
-            - /usr/local/bin/pipenv
+            # pip cache contains pipenv
+            - ~/.cache/pip
+            - ~/.cache/pyenv/versions
+            # .venv/ is the directory containing all the Python dependenies installed
+            # through pipenv.
+            - .venv/
+            - /opt/circleci/.pyenv/
       - run:
           name: Fix authorized_keys permissions
           command: sudo chmod 0600 tests/.ssh/authorized_keys
