@@ -12,7 +12,9 @@ jobs:
     steps:
       - checkout
       - restore_cache:
-          key: v1-deps-cache-{{ checksum "Pipfile.lock" }}
+          keys:
+            - v1-deps-cache-{{ checksum "Pipfile" }}
+            - v1-deps-cache
       - run:
           name: Install Python 3.8.1
           command: |
@@ -28,7 +30,7 @@ jobs:
             pip install pipenv
             pipenv install --dev
       - save_cache:
-          key: v1-deps-cache-{{ checksum "Pipfile.lock" }}
+          key: v1-deps-cache-{{ checksum "Pipfile" }}
           paths:
             # pip cache contains pipenv
             - ~/.cache/pip
