@@ -11,6 +11,8 @@ jobs:
       CI: true # This makes pipenv less verbose
     steps:
       - checkout
+      - restore_cache:
+          key: v1-deps-cache-{{ checksum "Pipfile.lock" }}
       - run:
           name: Install Python 3.8.1
           command: |
@@ -19,8 +21,6 @@ jobs:
             curl https://pyenv.run | bash
             pyenv install --skip-existing 3.8.1
             pyenv global 3.8.1
-      - restore_cache:
-          key: v1-deps-cache-{{ checksum "Pipfile.lock" }}
       - run:
           name: Install dependencies
           command: |
