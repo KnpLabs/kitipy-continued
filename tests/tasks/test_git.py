@@ -24,7 +24,7 @@ def executor(dispatcher: kitipy.Dispatcher) -> kitipy.Executor:
     subprocess.run('tar -C %s -zxf %s' % (baredir, tgz_path), shell=True)
     subprocess.run('git clone %s %s' % (baredir, clonedir), shell=True)
 
-    yield kitipy.Executor(clonedir, dispatcher)
+    yield kitipy.Executor(dispatcher, local_basedir=clonedir)
 
     shutil.rmtree(baredir)
     shutil.rmtree(clonedir)
