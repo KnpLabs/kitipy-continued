@@ -448,7 +448,7 @@ def find_service_arn(client: mypy_boto3_ecs.ECSClient, cluster_name: str,
     list_resp = client.list_services(cluster=cluster_name)
 
     for arn in list_resp["serviceArns"]:
-        if arn.endswith("service/" + service_name):
+        if arn.endswith("/" + service_name):
             return arn
 
     return None
