@@ -40,10 +40,8 @@ def executor(request):
 
 
 def executors_run_testdata():
-    return (
-        ("echo yolo", 0, "yolo\n", ""),
-        ("/bin/false", 1, "", ""),
-    )
+    return (("echo yolo", 0, "yolo\n", ""), ("/bin/false", 1, "", ""),
+            ("echo yolo >&2", 0, "", "yolo\n"))
 
 
 @pytest.mark.parametrize("cmd, returncode, stdout, stderr",
