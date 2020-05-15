@@ -476,7 +476,7 @@ class Executor(BaseExecutor):
         if channel.recv_ready():
             stdout_chunk = channel.recv(len(channel.in_buffer))
         if channel.recv_stderr_ready():
-            stderr_chunk = channel.recv(len(channel.in_stderr_buffer))
+            stderr_chunk = channel.recv_stderr(len(channel.in_stderr_buffer))
 
         if text:
             stdout_chunk = stdout_chunk.decode(encoding)  # type: ignore
