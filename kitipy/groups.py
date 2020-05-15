@@ -788,9 +788,10 @@ class RootCommand(Group):
         kwargs['filters'] = []
         super().__init__(**kwargs)
 
-        self._config = normalize_config(config)
-        self._dispatcher = set_up_file_transfer_listeners(Dispatcher())
         self.click_ctx = None
+        self._config = normalize_config(config)
+        self._dispatcher = Dispatcher()
+        set_up_file_transfer_listeners(self._dispatcher)
 
         stages = config['stages'].values()
         if len(stages) == 1:
