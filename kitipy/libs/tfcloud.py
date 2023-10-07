@@ -47,10 +47,10 @@ def get_current_state_version_outputs(
     # We then download the raw state file and extract the outputs from there.
     current_state = current_r.json()
     state_url = current_state["data"]["attributes"]["hosted-state-download-url"]
-    state_r = requests.get(state_url, headers=_headers(workspace_id))
-    if current_r.status_code != requests.codes.ok:
+    state_r = requests.get(state_url, headers=_headers(token))
+    if state_r.status_code != requests.codes.ok:
         raise RuntimeError(
             "Request to %s failed with code %d" % (state_url, state_r.status_code))
-    
+
     state = state_r.json()
     return {k: v["value"] for k, v in state["outputs"].items()}

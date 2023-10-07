@@ -12,10 +12,10 @@ setuptools.setup(
         "PyYAML>=5.1",
         "requests>=2.23.0",
         "boto3>=1.12.5",
-        "boto3-stubs[secretsmanager]>=*",
-        "boto3-stubs[ecs]>=*",
-        "boto3-stubs[ecr]>=*",
+        "boto3-stubs[secretsmanager]==1.26.62",
+        "boto3-stubs[ecs]==1.26.62",
+        "boto3-stubs[ecr]==1.26.62",
     ],
     dependency_links=[
-        'https://github.com/NiR-/container-transform/tarball/integration#egg=container-transform',
+        'https://github.com/akerouanton/container-transform/tarball/integration#egg=container-transform',
     ])
