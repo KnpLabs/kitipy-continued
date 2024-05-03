@@ -16,5 +16,6 @@ setuptools.setup(
         "paramiko==2.6.0",
         "PyYAML==5.1.0",
         "requests==2.27.1",
+        "markupsafe==2.0.1"
     ]
 )

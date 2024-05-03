@@ -12,3 +12,4 @@ Requires-Dist: Jinja2==2.7.0
 Requires-Dist: paramiko==2.6.0
 Requires-Dist: PyYAML==5.1.0
 Requires-Dist: requests==2.27.1
+Requires-Dist: markupsafe==2.0.1
