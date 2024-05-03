@@ -10,7 +10,7 @@ import json
 import kitipy
 import mypy_boto3_ecs
 import time
-from container_transform.converter import Converter  # type: ignore
+from kitipy.libs.container_transform.converter import Converter  # type: ignore
 from typing import Callable, Dict, Generator, List, Literal, Optional, Tuple, TypedDict, Union
 
 # Following list contains all the fields supported by create_service() but not

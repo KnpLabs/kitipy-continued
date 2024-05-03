@@ -7,15 +7,14 @@ setuptools.setup(
     license="MIT",
     packages=setuptools.find_packages(),
     install_requires=[
+        "boto3-stubs[ecr]==1.26.62",
+        "boto3-stubs[ecs]==1.26.62",
+        "boto3-stubs[secretsmanager]==1.26.62",
+        "boto3==1.12.5",
         "click==7.0.0",
+        "Jinja2==2.7.0",
         "paramiko==2.6.0",
         "PyYAML==5.1.0",
         "requests==2.23.0",
-        "boto3==1.12.5",
-        "boto3-stubs[secretsmanager]==1.26.62",
-        "boto3-stubs[ecs]==1.26.62",
-        "boto3-stubs[ecr]==1.26.62",
-    ],
-    dependency_links=[
-        'https://github.com/akerouanton/container-transform/tarball/integration#egg=container-transform',
-    ])
+    ]
+)
