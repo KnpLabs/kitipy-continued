@@ -10,9 +10,9 @@ yapf = ">=0.28"
 pytest-cov = "*"
 
 [packages]
-kitipy = {path = ".",editable = true}
-container-transform = {editable = true,git = "https://github.com/akerouanton/container-transform.git",ref = "integration"}
-boto3-stubs = {extras = ["cloudfront", "ecr", "ecs", "secretsmanager"],version = "==1.26.62"}
+kitipy = {path = ".", editable = true}
+container-transform = {editable = true, git = "https://github.com/Swanoo/container-transform.git", ref = "main"}
+boto3-stubs = {extras = ["cloudfront", "ecr", "ecs", "secretsmanager"], version = "==1.26.62"}
 
 [requires]
-python_version = "3.8"
+python_version = "3.12.4"
