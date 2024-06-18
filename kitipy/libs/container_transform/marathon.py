@@ -4,7 +4,8 @@ import shlex
 
 from copy import deepcopy
 from functools import reduce
-from collections import Mapping, defaultdict
+from collections import defaultdict
+from collections.abc import Mapping
 
 from .schema import TransformationTypes, ARG_MAP
 from .transformer import BaseTransformer

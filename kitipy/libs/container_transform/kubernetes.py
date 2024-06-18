@@ -3,7 +3,8 @@ import shlex
 
 from copy import deepcopy
 from functools import reduce
-from collections import Mapping, defaultdict
+from collections import defaultdict
+from collections.abc import Mapping
 
 import yaml
 

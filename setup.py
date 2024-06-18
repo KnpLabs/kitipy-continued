@@ -12,7 +12,7 @@ setuptools.setup(
         "boto3-stubs[secretsmanager]==1.26.62",
         "boto3==1.26.62",
         "click==7.0.0",
-        "Jinja2==2.7.0",
+        "Jinja2==3.1.4",
         "paramiko==2.6.0",
         "PyYAML==5.1.0",
         "requests==2.27.1",

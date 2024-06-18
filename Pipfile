@@ -11,7 +11,6 @@ pytest-cov = "*"
 
 [packages]
 kitipy = {path = ".", editable = true}
-container-transform = {editable = true, git = "https://github.com/Swanoo/container-transform.git", ref = "main"}
 boto3-stubs = {extras = ["cloudfront", "ecr", "ecs", "secretsmanager"], version = "==1.26.62"}
 
 [requires]

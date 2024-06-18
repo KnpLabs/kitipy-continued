@@ -6,9 +6,9 @@ License: MIT
 Requires-Dist: boto3-stubs[ecr]==1.26.62
 Requires-Dist: boto3-stubs[ecs]==1.26.62
 Requires-Dist: boto3-stubs[secretsmanager]==1.26.62
-Requires-Dist: boto3==1.23.7
+Requires-Dist: boto3==1.26.62
 Requires-Dist: click==7.0.0
-Requires-Dist: Jinja2==2.7.0
+Requires-Dist: Jinja2==3.1.4
 Requires-Dist: paramiko==2.6.0
 Requires-Dist: PyYAML==5.1.0
 Requires-Dist: requests==2.27.1
