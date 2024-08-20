@@ -1,15 +1,15 @@
 Metadata-Version: 2.1
 Name: kitipy
-Version: 0.1
+Version: 0.2
 Summary: KNP task runner to automate and ease dev and ops workflows
 License: MIT
-Requires-Dist: boto3-stubs[ecr]==1.26.62
-Requires-Dist: boto3-stubs[ecs]==1.26.62
-Requires-Dist: boto3-stubs[secretsmanager]==1.26.62
-Requires-Dist: boto3==1.26.62
-Requires-Dist: click==7.0.0
+Requires-Dist: boto3-stubs[ecr]==1.35.1
+Requires-Dist: boto3-stubs[ecs]==1.35.1
+Requires-Dist: boto3-stubs[secretsmanager]==1.35.1
+Requires-Dist: boto3==1.35.1
+Requires-Dist: click==7.1.2
 Requires-Dist: Jinja2==3.1.4
-Requires-Dist: paramiko==2.6.0
-Requires-Dist: PyYAML==5.1.0
-Requires-Dist: requests==2.27.1
-Requires-Dist: markupsafe==2.0.1
+Requires-Dist: paramiko==3.4.1
+Requires-Dist: PyYAML==6.0.2
+Requires-Dist: requests==2.32.3
+Requires-Dist: markupsafe==2.1.5
