@@ -4,14 +4,14 @@ url = "https://pypi.org/simple"
 verify_ssl = true
 
 [dev-packages]
-pytest = ">=5.1"
-mypy = ">=0.720"
-yapf = ">=0.28"
-pytest-cov = "*"
+pytest = "==8.3.2"
+mypy = "==1.11.1"
+yapf = "==0.40.2"
+pytest-cov = "==5.0.0"
 
 [packages]
 kitipy = {path = ".", editable = true}
-boto3-stubs = {extras = ["cloudfront", "ecr", "ecs", "secretsmanager"], version = "==1.26.62"}
+boto3-stubs = {extras = ["cloudfront", "ecr", "ecs", "secretsmanager"], version = "==1.35.1"}
 
 [requires]
 python_version = "3.12.4"
